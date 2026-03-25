@@ -49,14 +49,29 @@ export default function HomeStationsScreen({
   const variant = route.name === 'DriverHome' ? 'driver' : 'passenger';
   const showReservationsEntry = variant === 'passenger' && getAppRoleFromToken() === 'USER';
 
-  const { data, isLoading, isError, error, refetch, isFetching, fulfilledTimeStamp } = useGetStationsQuery({
-    page: 0,
-    size: 50,
-  });
+  const stationsQueryArg = { page: 0, size: 50 } as const;
+
+  const { data, isLoading, isError, error, refetch, isFetching, fulfilledTimeStamp } = useGetStationsQuery(
+    stationsQueryArg,
+  );
+  const cacheMeta = data?.cache;
 
   const age = useMemo(() => cacheAgeLabel(fulfilledTimeStamp ?? 0), [fulfilledTimeStamp]);
 
-  const list = data?.content ?? [];
+  const cacheHint = useMemo(() => {
+    if (cacheMeta?.source !== 'sqlite') {
+      return '';
+    }
+    if (cacheMeta.fallback) {
+      return ' · cache SQLite (réseau indisponible)';
+    }
+    if (cacheMeta.stale) {
+      return ' · cache SQLite (>24 h, à rafraîchir)';
+    }
+    return ' · cache SQLite (hors ligne)';
+  }, [cacheMeta]);
+
+  const list = data?.page.content ?? [];
   const showInitialLoading = isLoading && !data;
   const empty = !showInitialLoading && !isError && list.length === 0;
 
@@ -128,9 +143,10 @@ export default function HomeStationsScreen({
           consulter les départs si besoin.
         </Text>
       ) : null}
-      {(fulfilledTimeStamp ?? 0) > 0 ? (
+      {(fulfilledTimeStamp ?? 0) > 0 || cacheHint ? (
         <Text className="px-md pt-sm text-xs text-textSecondary" testID={`${testID}-cache-age`}>
           Données {age}
+          {cacheHint}
         </Text>
       ) : null}
 

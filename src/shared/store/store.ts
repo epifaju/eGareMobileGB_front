@@ -24,7 +24,13 @@ export const store = configureStore({
     auth: authSlice.reducer,
   },
   middleware: (getDefaultMiddleware) =>
-    getDefaultMiddleware().prepend(authListener.middleware).concat(baseApi.middleware),
+    getDefaultMiddleware({
+      // Émulateur / gros cache RTK Query : éviter les WARN dev sur le seuil 32 ms par défaut.
+      serializableCheck: { warnAfter: 128 },
+      immutableCheck: { warnAfter: 128 },
+    })
+      .prepend(authListener.middleware)
+      .concat(baseApi.middleware),
 });
 
 export type RootState = ReturnType<typeof store.getState>;

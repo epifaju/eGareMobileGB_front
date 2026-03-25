@@ -17,6 +17,24 @@ export type SeatMapParams = {
   capacity: number;
 };
 
+/** Scan QR embarquement (conducteur) — lié au véhicule courant. */
+export type DriverScanBoardingParams = {
+  vehicleId: number;
+  stationId: number;
+  stationName: string;
+  registrationCode: string;
+  routeLabel: string;
+};
+
+/** Manifeste / revenus (conducteur) — contexte véhicule. */
+export type VehicleOpsParams = {
+  vehicleId: number;
+  stationId: number;
+  stationName: string;
+  registrationCode: string;
+  routeLabel: string;
+};
+
 /** Stack « voyageur » : gares puis véhicules. */
 export type PassengerStackParamList = {
   Home: undefined;
@@ -26,6 +44,9 @@ export type PassengerStackParamList = {
   StationVehicles: StationVehiclesParams;
   SeatMap: SeatMapParams;
   MyReservations: undefined;
+  DriverScanBoarding: DriverScanBoardingParams;
+  VehicleManifest: VehicleOpsParams;
+  VehicleRevenue: VehicleOpsParams;
 };
 
 /** Stack « conducteur » : même liste de gares, libellés adaptés. */
@@ -35,6 +56,9 @@ export type DriverStackParamList = {
   StationsMap: undefined;
   StationVehicles: StationVehiclesParams;
   SeatMap: SeatMapParams;
+  DriverScanBoarding: DriverScanBoardingParams;
+  VehicleManifest: VehicleOpsParams;
+  VehicleRevenue: VehicleOpsParams;
 };
 
 /**

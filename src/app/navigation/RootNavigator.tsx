@@ -5,7 +5,9 @@ import { View } from 'react-native';
 import AuthStackNavigator from '@/app/navigation/AuthStackNavigator';
 import MainStackNavigator from '@/app/navigation/MainStackNavigator';
 import { hydrateFromStorage } from '@/features/auth/store/authSlice';
+import DriverPushRegistration from '@/shared/components/DriverPushRegistration';
 import OfflineBanner from '@/shared/components/OfflineBanner';
+import OfflineSyncBridge from '@/shared/offline/OfflineSyncBridge';
 import { useAppDispatch, useAppSelector } from '@/shared/store/hooks';
 
 export default function RootNavigator() {
@@ -18,6 +20,8 @@ export default function RootNavigator() {
 
   return (
     <View className="flex-1" testID="root-navigator">
+      <OfflineSyncBridge />
+      <DriverPushRegistration />
       <OfflineBanner />
       <View className="flex-1">
         <NavigationContainer>

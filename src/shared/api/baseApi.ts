@@ -8,8 +8,13 @@ import { tokenStorage } from '@/shared/lib/tokenStorage';
 
 const rawBaseQuery = fetchBaseQuery({
   baseUrl: API_BASE_URL,
-  prepareHeaders: (headers) => {
-    const token = tokenStorage.getAccessToken();
+  /** Async : si l’access a disparu mais le refresh est encore là, on récupère un access avant la requête. */
+  prepareHeaders: async (headers) => {
+    let token = tokenStorage.getAccessToken();
+    if (!token && tokenStorage.getRefreshToken()) {
+      await refreshAccessToken();
+      token = tokenStorage.getAccessToken();
+    }
     if (token) {
       headers.set('Authorization', `Bearer ${token}`);
     }
@@ -30,7 +35,7 @@ function isPublicAuthPath(args: string | FetchArgs): boolean {
   );
 }
 
-const baseQueryWithReauth: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError> = async (
+export const baseQueryWithReauth: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError> = async (
   args,
   api,
   extraOptions,

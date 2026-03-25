@@ -75,7 +75,7 @@ export default function SearchDestinationsScreen({
   const [hasSearched, setHasSearched] = useState(false);
 
   const { data: stationsPage } = useGetStationsQuery({ page: 0, size: 100 });
-  const stations = stationsPage?.content ?? [];
+  const stations = stationsPage?.page.content ?? [];
 
   const [triggerSuggest, suggestState] = useLazyGetDestinationSuggestionsQuery();
   const [triggerSearch, searchState] = useLazySearchVehiclesQuery();

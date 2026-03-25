@@ -1,11 +1,13 @@
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Pressable, RefreshControl, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Linking, Pressable, RefreshControl, Text, View } from 'react-native';
 
 import type { MainStackParamList } from '@/app/navigation/navigationTypes';
+import { useInitiatePaymentMutation } from '@/features/reservation/api/bookingApi';
 import { useGetVehicleSeatMapQuery, useReserveSeatMutation } from '@/features/vehicle/api/vehicleApi';
 import type { SeatCell } from '@/features/vehicle/types';
 import { parseApiError } from '@/shared/utils/apiError';
+import { isOfflineQueuedError } from '@/shared/utils/offlineError';
 
 export type SeatMapScreenProps = NativeStackScreenProps<MainStackParamList, 'SeatMap'>;
 
@@ -22,6 +24,7 @@ export default function SeatMapScreen({
   });
   const [selectedSeat, setSelectedSeat] = useState<number | null>(null);
   const [reserveSeat, { isLoading: isReserving }] = useReserveSeatMutation();
+  const [initiatePayment, { isLoading: isInitiatingPay }] = useInitiatePaymentMutation();
 
   const seatsByRow = useMemo(() => {
     if (!data) {
@@ -156,13 +159,49 @@ export default function SeatMapScreen({
       <Pressable
         accessibilityRole="button"
         className="mb-md rounded-default bg-primary px-md py-sm active:opacity-80 disabled:opacity-50"
-        disabled={selectedSeat == null || isReserving}
+        disabled={selectedSeat == null || isReserving || isInitiatingPay}
         onPress={async () => {
           if (selectedSeat == null) {
             return;
           }
           try {
-            await reserveSeat({ vehicleId, stationId, seatNumber: selectedSeat }).unwrap();
+            const result = await reserveSeat({ vehicleId, stationId, seatNumber: selectedSeat }).unwrap();
+            if (result.bookingStatus === 'PENDING_PAYMENT') {
+              Alert.alert(
+                'Paiement requis',
+                `Réservation #${result.bookingId} — place bloquée jusqu’au paiement. Ouvrir la page sandbox (Orange Money) ?`,
+                [
+                  { text: 'Plus tard', style: 'cancel', onPress: () => navigation.goBack() },
+                  {
+                    text: 'Payer',
+                    onPress: () => {
+                      void (async () => {
+                        try {
+                          const pay = await initiatePayment({
+                            bookingId: result.bookingId,
+                            body: { provider: 'ORANGE_MONEY' },
+                          }).unwrap();
+                          const canOpen = await Linking.canOpenURL(pay.checkoutUrl);
+                          if (canOpen) {
+                            await Linking.openURL(pay.checkoutUrl);
+                          } else {
+                            Alert.alert('Ouvrir le lien', pay.checkoutUrl);
+                          }
+                          Alert.alert(
+                            'Paiement',
+                            'Validez sur la page web (webhook sandbox → PAID), puis vérifiez Mes réservations.',
+                            [{ text: 'OK', onPress: () => navigation.goBack() }],
+                          );
+                        } catch (err) {
+                          Alert.alert('Paiement', parseApiError(err));
+                        }
+                      })();
+                    },
+                  },
+                ],
+              );
+              return;
+            }
             Alert.alert('Réservation', `Siège ${selectedSeat} réservé.`, [
               {
                 text: 'OK',
@@ -170,6 +209,14 @@ export default function SeatMapScreen({
               },
             ]);
           } catch (e) {
+            if (isOfflineQueuedError(e)) {
+              Alert.alert(
+                'Hors ligne',
+                'La réservation sera envoyée à la reconnexion (file FIFO).',
+                [{ text: 'OK', onPress: () => navigation.goBack() }],
+              );
+              return;
+            }
             Alert.alert('Impossible de réserver', parseApiError(e));
             void refetch();
           }

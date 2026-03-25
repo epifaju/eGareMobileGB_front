@@ -28,18 +28,19 @@ import {
 import type { PassengerStackParamList } from '@/app/navigation/navigationTypes';
 
 import {
-
   useCancelBookingMutation,
 
   useGetMyBookingsQuery,
 
 } from '@/features/reservation/api/bookingApi';
+import BookingQrBlock from '@/features/reservation/components/BookingQrBlock';
 
 import type { Booking, BookingStatus } from '@/features/reservation/types';
 
 import type { VehicleStatus } from '@/features/vehicle/types';
 
 import { parseApiError } from '@/shared/utils/apiError';
+import { isOfflineQueuedError } from '@/shared/utils/offlineError';
 
 
 
@@ -173,21 +174,29 @@ export default function MyReservationsScreen({
 
   const [includeCancelled, setIncludeCancelled] = useState(true);
 
-  const { data, isLoading, isError, error, refetch, isFetching } = useGetMyBookingsQuery({
+  const bookingsQueryArg = { includeCancelled, page: 0, size: 50 };
 
-    includeCancelled,
+  const { data, isLoading, isError, error, refetch, isFetching } = useGetMyBookingsQuery(bookingsQueryArg);
+  const cacheMeta = data?.cache;
 
-    page: 0,
-
-    size: 50,
-
-  });
+  const cacheHint = useMemo(() => {
+    if (cacheMeta?.source !== 'sqlite') {
+      return '';
+    }
+    if (cacheMeta.fallback) {
+      return 'Données cache SQLite (réseau indisponible) — QR billet si déjà synchronisé.';
+    }
+    if (cacheMeta.stale) {
+      return 'Cache SQLite (>24 h) — reconnectez-vous pour rafraîchir les billets.';
+    }
+    return 'Hors ligne — billets et QR issus du cache local.';
+  }, [cacheMeta]);
 
   const [cancelBooking, { isLoading: isCancelling }] = useCancelBookingMutation();
 
 
 
-  const list = data?.content ?? [];
+  const list = data?.page.content ?? [];
 
   const showInitialLoading = isLoading && !data;
 
@@ -283,6 +292,12 @@ export default function MyReservationsScreen({
 
       </View>
 
+      {cacheHint ? (
+        <Text className="border-b border-border px-md py-xs text-xs text-textSecondary" testID={`${testID}-cache-hint`}>
+          {cacheHint}
+        </Text>
+      ) : null}
+
 
 
       <FlatList
@@ -373,6 +388,22 @@ export default function MyReservationsScreen({
 
               </Text>
 
+              {item.qrToken &&
+              item.bookingStatus !== 'CANCELLED' &&
+              item.bookingStatus !== 'EXPIRED' ? (
+                <BookingQrBlock
+                  expiresAt={item.expiresAt}
+                  testID={`${testID}-qr-${item.id}`}
+                  value={item.qrToken}
+                />
+              ) : null}
+
+              {item.bookingStatus === 'CONFIRMED' && item.boardingValidatedAt ? (
+                <Text className="mt-xs text-xs text-success">
+                  Embarquement constaté : {formatWhen(item.boardingValidatedAt)}
+                </Text>
+              ) : null}
+
               {canCancelBooking(item) ? (
 
                 <Pressable
@@ -410,6 +441,20 @@ export default function MyReservationsScreen({
                                 await cancelBooking(item.id).unwrap();
 
                               } catch (e) {
+
+                                if (isOfflineQueuedError(e)) {
+
+                                  Alert.alert(
+
+                                    'Hors ligne',
+
+                                    'L’annulation sera synchronisée à la reconnexion (file FIFO).',
+
+                                  );
+
+                                  return;
+
+                                }
 
                                 Alert.alert('Erreur', parseApiError(e));
 

@@ -42,11 +42,24 @@ export default function StationsMapScreen({
     page: 0,
     size: 100,
   });
-  const { data: liveVehicles = [] } = useGetMapVehiclesQuery();
+  const { data: mapVehicles } = useGetMapVehiclesQuery();
   const [locationPerm, setLocationPerm] = useState<'unknown' | 'granted' | 'denied'>('unknown');
   useMapVehiclesRealtime();
 
-  const stations = data?.content ?? [];
+  const stations = data?.page.content ?? [];
+  const liveVehicles = mapVehicles?.vehicles ?? [];
+  const stationsCacheBadge =
+    data?.cache?.source === 'sqlite'
+      ? data.cache.stale
+        ? 'Gares: données locales (obsolètes)'
+        : 'Gares: données locales'
+      : null;
+  const cacheBadge =
+    mapVehicles?.cache?.source === 'sqlite'
+      ? mapVehicles.cache.stale
+        ? 'Données locales (obsolètes)'
+        : 'Données locales'
+      : null;
 
   const showMap = useMemo(() => {
     if (Platform.OS === 'web') {
@@ -145,6 +158,12 @@ export default function StationsMapScreen({
       <Text className="px-md pt-sm text-xs text-textSecondary">
         Marqueurs bleus = gares · rouges = véhicules actifs (temps réel).
       </Text>
+      {stationsCacheBadge ? (
+        <Text className="px-md pt-xs text-xs text-textSecondary">{stationsCacheBadge}</Text>
+      ) : null}
+      {cacheBadge ? (
+        <Text className="px-md pt-xs text-xs text-textSecondary">{cacheBadge}</Text>
+      ) : null}
       {locationPerm === 'denied' ? (
         <Text className="px-md pt-xs text-xs text-warning">
           Position refusée : carte centrée sur le pays. Activez la localisation pour vous centrer.

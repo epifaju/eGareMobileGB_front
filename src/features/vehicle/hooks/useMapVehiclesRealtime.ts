@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import { useDispatch } from 'react-redux';
 
 import { vehicleApi } from '@/features/vehicle/api/vehicleApi';
-import type { Vehicle } from '@/features/vehicle/types';
+import type { MapVehiclesResponse, Vehicle } from '@/features/vehicle/types';
 import { WS_STOMP_URL } from '@/shared/constants/ws';
 import type { AppDispatch } from '@/shared/store/store';
 
@@ -41,7 +41,8 @@ export function useMapVehiclesRealtime() {
           const payload = JSON.parse(message.body) as Vehicle;
           dispatch(
             vehicleApi.util.updateQueryData('getMapVehicles', undefined, (draft) => {
-              mergeVehicle(draft, payload);
+              const d = draft as unknown as Draft<MapVehiclesResponse>;
+              mergeVehicle(d.vehicles as unknown as Draft<Vehicle[]>, payload);
             }),
           );
         } catch {

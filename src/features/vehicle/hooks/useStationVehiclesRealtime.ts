@@ -9,11 +9,11 @@ import {
   STATION_VEHICLES_QUERY_DEFAULTS,
   vehicleApi,
 } from '@/features/vehicle/api/vehicleApi';
-import type { PageVehicle, Vehicle } from '@/features/vehicle/types';
+import type { StationVehiclesResponse, Vehicle } from '@/features/vehicle/types';
 import { WS_STOMP_URL } from '@/shared/constants/ws';
 
 function mergeVehicleUpdate(
-  draft: Draft<PageVehicle>,
+  draft: Draft<StationVehiclesResponse['page']>,
   incoming: Vehicle,
   activeOnly: boolean,
 ) {
@@ -63,7 +63,8 @@ export function useStationVehiclesRealtime(stationId: number, activeOnly: boolea
                 size: STATION_VEHICLES_QUERY_DEFAULTS.size,
               },
               (draft) => {
-                mergeVehicleUpdate(draft, payload, activeOnly);
+                const d = draft as unknown as Draft<StationVehiclesResponse>;
+                mergeVehicleUpdate(d.page as unknown as Draft<StationVehiclesResponse['page']>, payload, activeOnly);
               },
             ),
           );

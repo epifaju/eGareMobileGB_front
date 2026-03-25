@@ -24,6 +24,39 @@ jest.mock('react-native-maps', () => {
   };
 });
 
+jest.mock('react-native-qrcode-svg', () => {
+  const { View } = require('react-native');
+  return { __esModule: true, default: View };
+});
+
+jest.mock('expo-sqlite', () => ({
+  openDatabaseAsync: jest.fn(() =>
+    Promise.resolve({
+      execAsync: jest.fn(() => Promise.resolve()),
+      runAsync: jest.fn(() => Promise.resolve({ lastInsertRowId: 0, changes: 0 })),
+      getFirstAsync: jest.fn(() => Promise.resolve(null)),
+      getAllAsync: jest.fn(() => Promise.resolve([])),
+    }),
+  ),
+}));
+
+jest.mock('expo-constants', () => ({
+  expoConfig: { extra: { eas: { projectId: '' } } },
+}));
+
+jest.mock('expo-notifications', () => ({
+  requestPermissionsAsync: jest.fn(() => Promise.resolve({ status: 'granted' })),
+  getExpoPushTokenAsync: jest.fn(() => Promise.resolve({ data: 'ExponentPushToken[test]' })),
+}));
+
+jest.mock('expo-camera', () => {
+  const { View } = require('react-native');
+  return {
+    CameraView: View,
+    useCameraPermissions: jest.fn(() => [{ granted: true }, jest.fn()]),
+  };
+});
+
 jest.mock('expo-location', () => ({
   requestForegroundPermissionsAsync: jest.fn(() => Promise.resolve({ status: 'granted' })),
   getCurrentPositionAsync: jest.fn(() =>

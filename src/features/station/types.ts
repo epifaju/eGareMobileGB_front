@@ -15,6 +15,18 @@ export type PageStation = {
   number: number;
 };
 
+export type CacheMeta = {
+  source: 'network' | 'sqlite';
+  stale?: true;
+  fallback?: true;
+  updatedAt?: number;
+};
+
+export type StationsResponse = {
+  page: PageStation;
+  cache?: CacheMeta;
+};
+
 export type LowBandwidthStation = {
   id: number;
   name: string;

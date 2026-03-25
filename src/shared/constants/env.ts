@@ -24,3 +24,22 @@ function resolveApiBaseUrl(): string {
 }
 
 export const API_BASE_URL = resolveApiBaseUrl();
+
+/**
+ * PEM SPKI (clé publique RSA) — même paire que la clé privée `app.boarding.jwt` côté API.
+ * Validation RS256 hors ligne uniquement ; ne jamais embarquer la clé privée.
+ */
+function normalizeEnvPem(raw: string): string {
+  let s = raw.trim();
+  if (
+    (s.startsWith('"') && s.endsWith('"')) ||
+    (s.startsWith("'") && s.endsWith("'"))
+  ) {
+    s = s.slice(1, -1);
+  }
+  return s.replace(/\\n/g, '\n');
+}
+
+export const BOARDING_JWT_PUBLIC_KEY_PEM = normalizeEnvPem(
+  process.env.EXPO_PUBLIC_BOARDING_JWT_PUBLIC_KEY ?? '',
+);

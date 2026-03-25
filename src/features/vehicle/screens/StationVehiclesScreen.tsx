@@ -23,6 +23,7 @@ import { useStationVehiclesRealtime } from '@/features/vehicle/hooks/useStationV
 import type { Vehicle, VehicleStatus } from '@/features/vehicle/types';
 import { getAppRoleFromToken, isDriverOrAdminRole } from '@/shared/lib/jwtRole';
 import { parseApiError } from '@/shared/utils/apiError';
+import { isOfflineQueuedError } from '@/shared/utils/offlineError';
 
 const STATUS_LABEL: Record<VehicleStatus, string> = {
   EN_FILE: 'En file',
@@ -78,13 +79,27 @@ export default function StationVehiclesScreen({
 
   const { data, isLoading, isError, error, refetch, isFetching, fulfilledTimeStamp } =
     useGetStationVehiclesQuery(queryArgs);
+  const cacheMeta = data?.cache;
+
+  const sqliteHint = useMemo(() => {
+    if (cacheMeta?.source !== 'sqlite') {
+      return '';
+    }
+    if (cacheMeta.fallback) {
+      return ' · cache SQLite (réseau indisponible)';
+    }
+    if (cacheMeta.stale) {
+      return ' · cache SQLite (>24 h)';
+    }
+    return ' · hors ligne (cache SQLite)';
+  }, [cacheMeta]);
 
   const [updateVehicleStatus, { isLoading: isUpdatingStatus }] = useUpdateVehicleStatusMutation();
   const [updateVehicleLocation, { isLoading: isUpdatingLocation }] = useUpdateVehicleLocationMutation();
 
   useStationVehiclesRealtime(stationId, activeOnly);
 
-  const list = data?.content ?? [];
+  const list = data?.page.content ?? [];
   const showInitialLoading = isLoading && !data;
   const empty = !showInitialLoading && !isError && list.length === 0;
   const emptyMessage =
@@ -136,6 +151,7 @@ export default function StationVehiclesScreen({
       </Text>
       <Text className="px-md pb-sm text-xs text-textSecondary">
         Mises à jour temps réel · {cacheAge ? `données ${cacheAge}` : ''}
+        {sqliteHint}
         {showDriverControls ? ' · Liste des véhicules' : ''}
       </Text>
 
@@ -247,6 +263,53 @@ export default function StationVehiclesScreen({
                   </View>
                   <Pressable
                     accessibilityRole="button"
+                    className="mt-sm self-start rounded-default border border-border bg-surface px-md py-sm active:opacity-80"
+                    onPress={() => {
+                      navigation.navigate('DriverScanBoarding', {
+                        vehicleId: item.id,
+                        stationId,
+                        stationName,
+                        registrationCode: item.registrationCode,
+                        routeLabel: item.routeLabel,
+                      });
+                    }}
+                  >
+                    <Text className="text-xs font-semibold text-textPrimary">
+                      Scanner QR embarquement
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    className="mt-sm self-start rounded-default border border-border bg-surface px-md py-sm active:opacity-80"
+                    onPress={() => {
+                      navigation.navigate('VehicleManifest', {
+                        vehicleId: item.id,
+                        stationId,
+                        stationName,
+                        registrationCode: item.registrationCode,
+                        routeLabel: item.routeLabel,
+                      });
+                    }}
+                  >
+                    <Text className="text-xs font-semibold text-textPrimary">Manifeste passagers</Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    className="mt-sm self-start rounded-default border border-border bg-surface px-md py-sm active:opacity-80"
+                    onPress={() => {
+                      navigation.navigate('VehicleRevenue', {
+                        vehicleId: item.id,
+                        stationId,
+                        stationName,
+                        registrationCode: item.registrationCode,
+                        routeLabel: item.routeLabel,
+                      });
+                    }}
+                  >
+                    <Text className="text-xs font-semibold text-textPrimary">Revenus (30 j.)</Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
                     className="mt-sm self-start rounded-default border border-primary px-md py-sm active:opacity-80 disabled:opacity-50"
                     disabled={isUpdatingLocation}
                     onPress={async () => {
@@ -267,6 +330,13 @@ export default function StationVehiclesScreen({
                         }).unwrap();
                         Alert.alert('Position publiée', 'Position véhicule mise à jour.');
                       } catch (e) {
+                        if (isOfflineQueuedError(e)) {
+                          Alert.alert(
+                            'Hors ligne',
+                            'La position sera envoyée à la reconnexion (file FIFO).',
+                          );
+                          return;
+                        }
                         Alert.alert('Position non publiée', parseApiError(e));
                       }
                     }}

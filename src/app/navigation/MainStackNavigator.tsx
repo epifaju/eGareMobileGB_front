@@ -7,8 +7,11 @@ import SearchDestinationsScreen from '@/features/search/screens/SearchDestinatio
 import HomeStationsScreen from '@/features/station/screens/HomeStationsScreen';
 import LowBandwidthStationsScreen from '@/features/station/screens/LowBandwidthStationsScreen';
 import StationsMapScreen from '@/features/station/screens/StationsMapScreen';
+import DriverScanBoardingScreen from '@/features/vehicle/screens/DriverScanBoardingScreen';
 import SeatMapScreen from '@/features/vehicle/screens/SeatMapScreen';
 import StationVehiclesScreen from '@/features/vehicle/screens/StationVehiclesScreen';
+import VehicleManifestScreen from '@/features/vehicle/screens/VehicleManifestScreen';
+import VehicleRevenueScreen from '@/features/vehicle/screens/VehicleRevenueScreen';
 import type { DriverStackParamList, PassengerStackParamList } from '@/app/navigation/navigationTypes';
 import { colors } from '@/shared/constants/colors';
 import { getAppRoleFromToken, isDriverOrAdminRole } from '@/shared/lib/jwtRole';
@@ -49,6 +52,13 @@ function PassengerStackNavigator() {
         component={MyReservationsScreen}
         options={{ title: 'Mes réservations' }}
       />
+      <PassengerStack.Screen
+        name="DriverScanBoarding"
+        component={DriverScanBoardingScreen}
+        options={{ title: 'Scan embarquement', headerShown: false }}
+      />
+      <PassengerStack.Screen name="VehicleManifest" component={VehicleManifestScreen} options={{ title: 'Manifeste' }} />
+      <PassengerStack.Screen name="VehicleRevenue" component={VehicleRevenueScreen} options={{ title: 'Revenus' }} />
     </PassengerStack.Navigator>
   );
 }
@@ -69,6 +79,13 @@ function DriverStackNavigator() {
         options={{ title: 'Véhicules' }}
       />
       <DriverStack.Screen name="SeatMap" component={SeatMapScreen} options={{ title: 'Choix du siège' }} />
+      <DriverStack.Screen
+        name="DriverScanBoarding"
+        component={DriverScanBoardingScreen}
+        options={{ title: 'Scan embarquement', headerShown: false }}
+      />
+      <DriverStack.Screen name="VehicleManifest" component={VehicleManifestScreen} options={{ title: 'Manifeste' }} />
+      <DriverStack.Screen name="VehicleRevenue" component={VehicleRevenueScreen} options={{ title: 'Revenus' }} />
     </DriverStack.Navigator>
   );
 }
