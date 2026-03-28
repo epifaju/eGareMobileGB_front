@@ -109,8 +109,19 @@ export const bookingApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: [{ type: 'Booking', id: 'LIST' }],
     }),
+    /** Phase 5 — SMS de rappel (texte côté serveur, voir app.booking.receipt.sms-template). */
+    sendBookingReceiptSms: builder.mutation<void, number>({
+      query: (bookingId) => ({
+        url: `/api/bookings/${bookingId}/receipt/send-sms`,
+        method: 'POST',
+      }),
+    }),
   }),
 });
 
-export const { useGetMyBookingsQuery, useCancelBookingMutation, useInitiatePaymentMutation } =
-  bookingApi;
+export const {
+  useGetMyBookingsQuery,
+  useCancelBookingMutation,
+  useInitiatePaymentMutation,
+  useSendBookingReceiptSmsMutation,
+} = bookingApi;

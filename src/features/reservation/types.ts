@@ -2,7 +2,7 @@ import type { VehicleStatus } from '@/features/vehicle/types';
 
 export type BookingStatus = 'PENDING_PAYMENT' | 'CONFIRMED' | 'CANCELLED' | 'EXPIRED';
 
-export type PaymentStatus = 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED';
+export type PaymentStatus = 'PENDING' | 'PAID' | 'REFUND_PENDING' | 'FAILED' | 'REFUNDED';
 
 export type PaymentProvider = 'INTERNAL' | 'ORANGE_MONEY' | 'WAVE' | 'MTN' | 'CARD';
 
@@ -25,6 +25,9 @@ export type Booking = {
   expiresAt: string | null;
   /** Premier scan valide à l’embarquement (ISO), si déjà enregistré côté serveur. */
   boardingValidatedAt?: string | null;
+  /** Phase 4 — montant remboursé (80 % du payé en général). */
+  refundAmount?: number | null;
+  refundedAt?: string | null;
 };
 
 /** Réponse POST `/api/vehicles/{id}/boarding/validate-qr`. */

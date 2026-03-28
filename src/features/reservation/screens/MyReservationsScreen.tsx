@@ -32,7 +32,10 @@ import {
 
   useGetMyBookingsQuery,
 
+  useSendBookingReceiptSmsMutation,
+
 } from '@/features/reservation/api/bookingApi';
+import { downloadAndShareBookingReceipt } from '@/features/reservation/lib/downloadAndShareBookingReceipt';
 import BookingQrBlock from '@/features/reservation/components/BookingQrBlock';
 
 import type { Booking, BookingStatus } from '@/features/reservation/types';
@@ -146,6 +149,14 @@ function canCancelBooking(item: Booking): boolean {
 
 }
 
+function canDownloadReceipt(item: Booking): boolean {
+
+  const s = item.paymentStatus;
+
+  return s === 'PAID' || s === 'REFUNDED' || s === 'REFUND_PENDING';
+
+}
+
 function extractHttpStatus(error: unknown): number | null {
 
   if (!error || typeof error !== 'object') {
@@ -193,6 +204,10 @@ export default function MyReservationsScreen({
   }, [cacheMeta]);
 
   const [cancelBooking, { isLoading: isCancelling }] = useCancelBookingMutation();
+
+  const [sendReceiptSms, { isLoading: isSendingReceiptSms }] = useSendBookingReceiptSmsMutation();
+
+  const [receiptDownloadId, setReceiptDownloadId] = useState<number | null>(null);
 
 
 
@@ -479,6 +494,106 @@ export default function MyReservationsScreen({
                   <Text className="text-sm font-semibold text-error">Annuler la réservation</Text>
 
                 </Pressable>
+
+              ) : null}
+
+              {canDownloadReceipt(item) ? (
+
+                <View className="mt-md flex-row flex-wrap gap-xs">
+
+                  <Pressable
+
+                    accessibilityRole="button"
+
+                    className="mr-sm mb-xs rounded-default border border-border bg-surface px-md py-sm active:opacity-80 disabled:opacity-50"
+
+                    disabled={receiptDownloadId === item.id}
+
+                    onPress={() => {
+
+                      void (async () => {
+
+                        setReceiptDownloadId(item.id);
+
+                        try {
+
+                          await downloadAndShareBookingReceipt(item.id);
+
+                        } catch (e) {
+
+                          const msg = e instanceof Error ? e.message : parseApiError(e);
+
+                          Alert.alert('Reçu PDF', msg);
+
+                        } finally {
+
+                          setReceiptDownloadId(null);
+
+                        }
+
+                      })();
+
+                    }}
+
+                    testID={`${testID}-receipt-pdf-${item.id}`}
+
+                  >
+
+                    {receiptDownloadId === item.id ? (
+
+                      <ActivityIndicator color="#444" size="small" />
+
+                    ) : (
+
+                      <Text className="text-sm font-semibold text-textPrimary">Reçu PDF</Text>
+
+                    )}
+
+                  </Pressable>
+
+                  <Pressable
+
+                    accessibilityRole="button"
+
+                    className="mb-xs rounded-default border border-border bg-surface px-md py-sm active:opacity-80 disabled:opacity-50"
+
+                    disabled={isSendingReceiptSms}
+
+                    onPress={() => {
+
+                      void (async () => {
+
+                        try {
+
+                          await sendReceiptSms(item.id).unwrap();
+
+                          Alert.alert(
+
+                            'SMS',
+
+                            'Un SMS de rappel a été envoyé (ou journalisé en mode développement).',
+
+                          );
+
+                        } catch (e) {
+
+                          Alert.alert('SMS', parseApiError(e));
+
+                        }
+
+                      })();
+
+                    }}
+
+                    testID={`${testID}-receipt-sms-${item.id}`}
+
+                  >
+
+                    <Text className="text-sm font-semibold text-textPrimary">Rappel SMS</Text>
+
+                  </Pressable>
+
+                </View>
 
               ) : null}
 
