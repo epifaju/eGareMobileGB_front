@@ -1,9 +1,12 @@
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
   Keyboard,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
   Pressable,
   ScrollView,
   Switch,
@@ -11,12 +14,14 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { PassengerStackParamList } from '@/app/navigation/navigationTypes';
 import { useLazyGetDestinationSuggestionsQuery, useLazySearchVehiclesQuery } from '@/features/search/api/searchApi';
 import { searchFiltersStorage } from '@/features/search/lib/searchFiltersStorage';
 import type { SearchVehiclesParams } from '@/features/search/types';
 import { useGetStationsQuery } from '@/features/station/api/stationApi';
+import type { Station } from '@/features/station/types';
 import type { Vehicle, VehicleStatus } from '@/features/vehicle/types';
 import { getAppRoleFromToken } from '@/shared/lib/jwtRole';
 import { parseApiError } from '@/shared/utils/apiError';
@@ -36,6 +41,8 @@ const SORT_OPTIONS = [
   { id: 'fareAmountXof,desc', label: 'Tarif ↓' },
 ] as const;
 
+const DEFAULT_SORT: (typeof SORT_OPTIONS)[number]['id'] = 'departureScheduledAt,asc';
+
 function formatDeparture(iso: string | null): string {
   if (!iso) {
     return '—';
@@ -50,6 +57,321 @@ function formatDeparture(iso: string | null): string {
   } catch {
     return '—';
   }
+}
+
+function countActiveFilters(p: {
+  stationId: number | undefined;
+  statusFilter: VehicleStatus | undefined;
+  minFare: string;
+  maxFare: string;
+  departurePreset: 'none' | 'next2h' | 'next6h' | 'today';
+  departureFromMinutes: string;
+  departureToMinutes: string;
+  sort: (typeof SORT_OPTIONS)[number]['id'];
+  activeOnly: boolean;
+}): number {
+  let n = 0;
+  if (p.stationId !== undefined) {
+    n++;
+  }
+  if (p.statusFilter !== undefined) {
+    n++;
+  }
+  if (p.minFare.trim() !== '') {
+    n++;
+  }
+  if (p.maxFare.trim() !== '') {
+    n++;
+  }
+  if (p.departurePreset !== 'none') {
+    n++;
+  }
+  if (p.departureFromMinutes.trim() !== '') {
+    n++;
+  }
+  if (p.departureToMinutes.trim() !== '') {
+    n++;
+  }
+  if (p.sort !== DEFAULT_SORT) {
+    n++;
+  }
+  if (!p.activeOnly) {
+    n++;
+  }
+  return n;
+}
+
+type FiltersSheetProps = {
+  visible: boolean;
+  onClose: () => void;
+  onApply: () => void;
+  onReset: () => void;
+  testID: string;
+  stations: Station[];
+  stationId: number | undefined;
+  setStationId: (v: number | undefined) => void;
+  statusFilter: VehicleStatus | undefined;
+  setStatusFilter: (v: VehicleStatus | undefined) => void;
+  minFare: string;
+  setMinFare: (v: string) => void;
+  maxFare: string;
+  setMaxFare: (v: string) => void;
+  activeOnly: boolean;
+  setActiveOnly: (v: boolean) => void;
+  departurePreset: 'none' | 'next2h' | 'next6h' | 'today';
+  setDeparturePreset: (v: 'none' | 'next2h' | 'next6h' | 'today') => void;
+  departureFromMinutes: string;
+  setDepartureFromMinutes: (v: string) => void;
+  departureToMinutes: string;
+  setDepartureToMinutes: (v: string) => void;
+  sort: (typeof SORT_OPTIONS)[number]['id'];
+  setSort: (v: (typeof SORT_OPTIONS)[number]['id']) => void;
+};
+
+function SearchFiltersSheet({
+  visible,
+  onClose,
+  onApply,
+  onReset,
+  testID,
+  stations,
+  stationId,
+  setStationId,
+  statusFilter,
+  setStatusFilter,
+  minFare,
+  setMinFare,
+  maxFare,
+  setMaxFare,
+  activeOnly,
+  setActiveOnly,
+  departurePreset,
+  setDeparturePreset,
+  departureFromMinutes,
+  setDepartureFromMinutes,
+  departureToMinutes,
+  setDepartureToMinutes,
+  sort,
+  setSort,
+}: FiltersSheetProps) {
+  const insets = useSafeAreaInsets();
+
+  return (
+    <Modal
+      animationType="slide"
+      onRequestClose={onClose}
+      transparent
+      visible={visible}
+      testID={`${testID}-filters-modal`}
+    >
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        className="flex-1"
+        keyboardVerticalOffset={0}
+      >
+        <View className="flex-1 justify-end">
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Fermer les filtres"
+            className="absolute bottom-0 left-0 right-0 top-0 bg-black/50"
+            onPress={onClose}
+            testID={`${testID}-filters-backdrop`}
+          />
+          <View className="max-h-[88%] w-full rounded-t-2xl border-t border-border bg-background">
+            <View className="flex-row items-center justify-between border-b border-border px-md py-sm">
+              <Text className="text-lg font-semibold text-textPrimary">Filtres</Text>
+              <Pressable
+                accessibilityRole="button"
+                className="px-sm py-xs active:opacity-70"
+                hitSlop={12}
+                onPress={onClose}
+                testID={`${testID}-filters-close`}
+              >
+                <Text className="text-base font-medium text-primary">Fermer</Text>
+              </Pressable>
+            </View>
+            <ScrollView
+              className="px-md pt-md"
+              contentContainerStyle={{ paddingBottom: 16 }}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator
+            >
+              <Text className="mb-xs text-xs font-medium text-textSecondary">Gare</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-md">
+                <Pressable
+                  accessibilityRole="button"
+                  className={`mr-xs rounded-full border px-md py-sm ${
+                    stationId === undefined ? 'border-primary bg-surface' : 'border-border bg-background'
+                  }`}
+                  onPress={() => setStationId(undefined)}
+                  testID={`${testID}-station-all`}
+                >
+                  <Text className="text-xs text-textPrimary">Toutes</Text>
+                </Pressable>
+                {stations.map((s) => {
+                  const selected = stationId === s.id;
+                  return (
+                    <Pressable
+                      key={s.id}
+                      accessibilityRole="button"
+                      className={`mr-xs rounded-full border px-md py-sm ${
+                        selected ? 'border-primary bg-surface' : 'border-border bg-background'
+                      }`}
+                      onPress={() => setStationId(s.id)}
+                      testID={`${testID}-station-${s.id}`}
+                    >
+                      <Text className="text-xs text-textPrimary" numberOfLines={1}>
+                        {s.city ?? s.name}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+
+              <Text className="mb-xs text-xs font-medium text-textSecondary">Statut véhicule</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-md">
+                <Pressable
+                  className={`mr-xs rounded-full border px-md py-sm ${
+                    statusFilter === undefined ? 'border-primary bg-surface' : 'border-border bg-background'
+                  }`}
+                  onPress={() => setStatusFilter(undefined)}
+                >
+                  <Text className="text-xs text-textPrimary">Tous</Text>
+                </Pressable>
+                {STATUS_OPTIONS.map((st) => (
+                  <Pressable
+                    key={st}
+                    className={`mr-xs rounded-full border px-md py-sm ${
+                      statusFilter === st ? 'border-primary bg-surface' : 'border-border bg-background'
+                    }`}
+                    onPress={() => setStatusFilter(st)}
+                  >
+                    <Text className="text-xs text-textPrimary">{STATUS_LABEL[st]}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+
+              <View className="mb-md flex-row gap-sm">
+                <View className="flex-1">
+                  <Text className="mb-xs text-xs text-textSecondary">Tarif min (XOF)</Text>
+                  <TextInput
+                    className="rounded-default border border-border bg-surface px-md py-sm text-textPrimary"
+                    keyboardType="number-pad"
+                    onChangeText={setMinFare}
+                    placeholder="Min"
+                    value={minFare}
+                  />
+                </View>
+                <View className="flex-1">
+                  <Text className="mb-xs text-xs text-textSecondary">Tarif max (XOF)</Text>
+                  <TextInput
+                    className="rounded-default border border-border bg-surface px-md py-sm text-textPrimary"
+                    keyboardType="number-pad"
+                    onChangeText={setMaxFare}
+                    placeholder="Max"
+                    value={maxFare}
+                  />
+                </View>
+              </View>
+
+              <View className="mb-md flex-row flex-wrap gap-sm">
+                <Pressable
+                  className={`rounded-full border px-md py-sm ${
+                    departurePreset === 'next2h' ? 'border-primary bg-surface' : 'border-border bg-background'
+                  }`}
+                  onPress={() => setDeparturePreset(departurePreset === 'next2h' ? 'none' : 'next2h')}
+                >
+                  <Text className="text-xs text-textPrimary">Départ dans les 2 h</Text>
+                </Pressable>
+                <Pressable
+                  className={`rounded-full border px-md py-sm ${
+                    departurePreset === 'next6h' ? 'border-primary bg-surface' : 'border-border bg-background'
+                  }`}
+                  onPress={() => setDeparturePreset(departurePreset === 'next6h' ? 'none' : 'next6h')}
+                >
+                  <Text className="text-xs text-textPrimary">Départ dans les 6 h</Text>
+                </Pressable>
+                <Pressable
+                  className={`rounded-full border px-md py-sm ${
+                    departurePreset === 'today' ? 'border-primary bg-surface' : 'border-border bg-background'
+                  }`}
+                  onPress={() => setDeparturePreset(departurePreset === 'today' ? 'none' : 'today')}
+                >
+                  <Text className="text-xs text-textPrimary">Départ aujourd’hui</Text>
+                </Pressable>
+              </View>
+
+              <View className="mb-md flex-row gap-sm">
+                <View className="flex-1">
+                  <Text className="mb-xs text-xs text-textSecondary">Départ min (dans X min)</Text>
+                  <TextInput
+                    className="rounded-default border border-border bg-surface px-md py-sm text-textPrimary"
+                    keyboardType="number-pad"
+                    onChangeText={setDepartureFromMinutes}
+                    placeholder="ex. 15"
+                    value={departureFromMinutes}
+                  />
+                </View>
+                <View className="flex-1">
+                  <Text className="mb-xs text-xs text-textSecondary">Départ max (dans X min)</Text>
+                  <TextInput
+                    className="rounded-default border border-border bg-surface px-md py-sm text-textPrimary"
+                    keyboardType="number-pad"
+                    onChangeText={setDepartureToMinutes}
+                    placeholder="ex. 180"
+                    value={departureToMinutes}
+                  />
+                </View>
+              </View>
+
+              <Text className="mb-xs text-xs font-medium text-textSecondary">Tri</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-md">
+                {SORT_OPTIONS.map((opt) => (
+                  <Pressable
+                    key={opt.id}
+                    className={`mr-xs rounded-full border px-md py-sm ${
+                      sort === opt.id ? 'border-primary bg-surface' : 'border-border bg-background'
+                    }`}
+                    onPress={() => setSort(opt.id)}
+                  >
+                    <Text className="text-xs text-textPrimary">{opt.label}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+
+              <View className="mb-md flex-row items-center justify-between">
+                <Text className="flex-1 text-sm text-textPrimary">Exclure les départs (Parti)</Text>
+                <Switch value={activeOnly} onValueChange={setActiveOnly} />
+              </View>
+
+              <Pressable
+                accessibilityRole="button"
+                className="mb-sm self-start active:opacity-70"
+                onPress={onReset}
+                testID={`${testID}-filters-reset`}
+              >
+                <Text className="text-sm text-primary underline">Réinitialiser les filtres</Text>
+              </Pressable>
+            </ScrollView>
+
+            <View
+              className="border-t border-border bg-background px-md pt-md"
+              style={{ paddingBottom: Math.max(insets.bottom, 12) }}
+            >
+              <Pressable
+                accessibilityRole="button"
+                className="rounded-default bg-primary px-md py-md active:opacity-90"
+                onPress={onApply}
+                testID={`${testID}-filters-apply`}
+              >
+                <Text className="text-center text-sm font-semibold text-white">Appliquer et rechercher</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
 }
 
 export type SearchDestinationsScreenProps = NativeStackScreenProps<
@@ -71,8 +393,12 @@ export default function SearchDestinationsScreen({
   const [departurePreset, setDeparturePreset] = useState<'none' | 'next2h' | 'next6h' | 'today'>('none');
   const [departureFromMinutes, setDepartureFromMinutes] = useState('');
   const [departureToMinutes, setDepartureToMinutes] = useState('');
-  const [sort, setSort] = useState<(typeof SORT_OPTIONS)[number]['id']>('departureScheduledAt,asc');
+  const [sort, setSort] = useState<(typeof SORT_OPTIONS)[number]['id']>(DEFAULT_SORT);
   const [hasSearched, setHasSearched] = useState(false);
+  const [filtersSheetOpen, setFiltersSheetOpen] = useState(false);
+  /** Résultats affichés : source de vérité = promesse unwrap (évite searchState.data désynchronisé avec le lazy query). */
+  const [searchList, setSearchList] = useState<Vehicle[] | null>(null);
+  const searchRequestIdRef = useRef(0);
 
   const { data: stationsPage } = useGetStationsQuery({ page: 0, size: 100 });
   const stations = stationsPage?.page.content ?? [];
@@ -81,6 +407,32 @@ export default function SearchDestinationsScreen({
   const [triggerSearch, searchState] = useLazySearchVehiclesQuery();
 
   const canReserve = getAppRoleFromToken() === 'USER';
+
+  const filterBadgeCount = useMemo(
+    () =>
+      countActiveFilters({
+        stationId,
+        statusFilter,
+        minFare,
+        maxFare,
+        departurePreset,
+        departureFromMinutes,
+        departureToMinutes,
+        sort,
+        activeOnly,
+      }),
+    [
+      stationId,
+      statusFilter,
+      minFare,
+      maxFare,
+      departurePreset,
+      departureFromMinutes,
+      departureToMinutes,
+      sort,
+      activeOnly,
+    ],
+  );
 
   useEffect(() => {
     const persisted = searchFiltersStorage.read();
@@ -188,7 +540,8 @@ export default function SearchDestinationsScreen({
       if (!Number.isNaN(fromMin) && fromMin >= 0) {
         params.departureAfter = new Date(now.getTime() + fromMin * 60 * 1000).toISOString();
       }
-      if (!Number.isNaN(toMin) && toMin >= 0) {
+      // toMin === 0 ⇒ « avant maintenant » : exclut les départs futurs (seed / démo).
+      if (!Number.isNaN(toMin) && toMin > 0) {
         params.departureBefore = new Date(now.getTime() + toMin * 60 * 1000).toISOString();
       }
     }
@@ -206,299 +559,246 @@ export default function SearchDestinationsScreen({
     statusFilter,
   ]);
 
-  const onSearch = useCallback(() => {
+  const runSearch = useCallback(() => {
     Keyboard.dismiss();
-    void triggerSearch(buildParams())
+    const id = ++searchRequestIdRef.current;
+    const params = buildParams();
+    void triggerSearch(params)
       .unwrap()
-      .then(() => setHasSearched(true))
+      .then((page) => {
+        if (searchRequestIdRef.current !== id) {
+          return;
+        }
+        setSearchList(page.content ?? []);
+        setHasSearched(true);
+      })
       .catch(() => {
+        if (searchRequestIdRef.current !== id) {
+          return;
+        }
+        setSearchList([]);
         setHasSearched(true);
       });
   }, [buildParams, triggerSearch]);
 
-  const list = searchState.data?.content ?? [];
-  const loading = searchState.isLoading;
+  const resetFilters = useCallback(() => {
+    setStationId(undefined);
+    setStatusFilter(undefined);
+    setMinFare('');
+    setMaxFare('');
+    setActiveOnly(true);
+    setDeparturePreset('none');
+    setDepartureFromMinutes('');
+    setDepartureToMinutes('');
+    setSort(DEFAULT_SORT);
+  }, []);
+
+  const applyFiltersAndSearch = useCallback(() => {
+    setFiltersSheetOpen(false);
+    runSearch();
+  }, [runSearch]);
+
+  const list = searchList ?? [];
+  /** isFetching couvre aussi les relances lazy ; isLoading seul peut rester false alors que la requête court. */
+  const loading = searchState.isFetching;
   const error = searchState.error;
 
-  const header = (
-    <View className="pb-md">
-      <Text className="mb-xs text-xs font-medium text-textSecondary">Destination (ligne)</Text>
-      <TextInput
-        accessibilityLabel="Recherche destination"
-        className="rounded-default border border-border bg-surface px-md py-sm text-textPrimary"
-        onChangeText={setDestinationQ}
-        placeholder="Ex. Bissau, Gabú…"
-        testID={`${testID}-input-destination`}
-        value={destinationQ}
-      />
-      {suggestions.length > 0 && destinationQ.trim().length >= 2 ? (
-        <View
-          className="mt-xs max-h-40 rounded-default border border-border bg-surface"
-          testID={`${testID}-suggestions`}
-        >
-          {suggestions.map((s) => (
-            <Pressable
-              key={s.label}
-              accessibilityRole="button"
-              className="border-b border-border px-md py-sm active:bg-background"
-              onPress={() => {
-                setDestinationQ(s.label);
-                setSuggestions([]);
-                Keyboard.dismiss();
-              }}
-            >
-              <Text className="text-sm text-textPrimary">{s.label}</Text>
-            </Pressable>
-          ))}
+  const listHeader = useMemo(() => {
+    if (loading) {
+      return (
+        <View className="flex-row items-center justify-center py-sm">
+          <ActivityIndicator />
+          <Text className="ml-sm text-textSecondary">Recherche…</Text>
         </View>
-      ) : null}
-
-      <Text className="mb-xs mt-md text-xs font-medium text-textSecondary">Gare</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-md">
-        <Pressable
-          accessibilityRole="button"
-          className={`mr-xs rounded-full border px-md py-sm ${
-            stationId === undefined ? 'border-primary bg-surface' : 'border-border bg-background'
-          }`}
-          onPress={() => setStationId(undefined)}
-          testID={`${testID}-station-all`}
-        >
-          <Text className="text-xs text-textPrimary">Toutes</Text>
-        </Pressable>
-        {stations.map((s) => {
-          const selected = stationId === s.id;
-          return (
-            <Pressable
-              key={s.id}
-              accessibilityRole="button"
-              className={`mr-xs rounded-full border px-md py-sm ${
-                selected ? 'border-primary bg-surface' : 'border-border bg-background'
-              }`}
-              onPress={() => setStationId(s.id)}
-              testID={`${testID}-station-${s.id}`}
-            >
-              <Text className="text-xs text-textPrimary" numberOfLines={1}>
-                {s.city ?? s.name}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
-
-      <Text className="mb-xs text-xs font-medium text-textSecondary">Statut véhicule</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-md">
-        <Pressable
-          className={`mr-xs rounded-full border px-md py-sm ${
-            statusFilter === undefined ? 'border-primary bg-surface' : 'border-border bg-background'
-          }`}
-          onPress={() => setStatusFilter(undefined)}
-        >
-          <Text className="text-xs text-textPrimary">Tous</Text>
-        </Pressable>
-        {STATUS_OPTIONS.map((st) => (
-          <Pressable
-            key={st}
-            className={`mr-xs rounded-full border px-md py-sm ${
-              statusFilter === st ? 'border-primary bg-surface' : 'border-border bg-background'
-            }`}
-            onPress={() => setStatusFilter(st)}
-          >
-            <Text className="text-xs text-textPrimary">{STATUS_LABEL[st]}</Text>
-          </Pressable>
-        ))}
-      </ScrollView>
-
-      <View className="mb-md flex-row gap-sm">
-        <View className="flex-1">
-          <Text className="mb-xs text-xs text-textSecondary">Tarif min (XOF)</Text>
-          <TextInput
-            className="rounded-default border border-border bg-surface px-md py-sm text-textPrimary"
-            keyboardType="number-pad"
-            onChangeText={setMinFare}
-            placeholder="Min"
-            value={minFare}
-          />
-        </View>
-        <View className="flex-1">
-          <Text className="mb-xs text-xs text-textSecondary">Tarif max (XOF)</Text>
-          <TextInput
-            className="rounded-default border border-border bg-surface px-md py-sm text-textPrimary"
-            keyboardType="number-pad"
-            onChangeText={setMaxFare}
-            placeholder="Max"
-            value={maxFare}
-          />
-        </View>
-      </View>
-
-      <View className="mb-md flex-row flex-wrap gap-sm">
-        <Pressable
-          className={`rounded-full border px-md py-sm ${
-            departurePreset === 'next2h' ? 'border-primary bg-surface' : 'border-border bg-background'
-          }`}
-          onPress={() => setDeparturePreset((p) => (p === 'next2h' ? 'none' : 'next2h'))}
-        >
-          <Text className="text-xs text-textPrimary">Départ dans les 2 h</Text>
-        </Pressable>
-        <Pressable
-          className={`rounded-full border px-md py-sm ${
-            departurePreset === 'next6h' ? 'border-primary bg-surface' : 'border-border bg-background'
-          }`}
-          onPress={() => setDeparturePreset((p) => (p === 'next6h' ? 'none' : 'next6h'))}
-        >
-          <Text className="text-xs text-textPrimary">Départ dans les 6 h</Text>
-        </Pressable>
-        <Pressable
-          className={`rounded-full border px-md py-sm ${
-            departurePreset === 'today' ? 'border-primary bg-surface' : 'border-border bg-background'
-          }`}
-          onPress={() => setDeparturePreset((p) => (p === 'today' ? 'none' : 'today'))}
-        >
-          <Text className="text-xs text-textPrimary">Départ aujourd’hui</Text>
-        </Pressable>
-      </View>
-
-      <View className="mb-md flex-row gap-sm">
-        <View className="flex-1">
-          <Text className="mb-xs text-xs text-textSecondary">Départ min (dans X min)</Text>
-          <TextInput
-            className="rounded-default border border-border bg-surface px-md py-sm text-textPrimary"
-            keyboardType="number-pad"
-            onChangeText={setDepartureFromMinutes}
-            placeholder="ex. 15"
-            value={departureFromMinutes}
-          />
-        </View>
-        <View className="flex-1">
-          <Text className="mb-xs text-xs text-textSecondary">Départ max (dans X min)</Text>
-          <TextInput
-            className="rounded-default border border-border bg-surface px-md py-sm text-textPrimary"
-            keyboardType="number-pad"
-            onChangeText={setDepartureToMinutes}
-            placeholder="ex. 180"
-            value={departureToMinutes}
-          />
-        </View>
-      </View>
-
-      <Text className="mb-xs text-xs font-medium text-textSecondary">Tri</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-md">
-        {SORT_OPTIONS.map((opt) => (
-          <Pressable
-            key={opt.id}
-            className={`mr-xs rounded-full border px-md py-sm ${
-              sort === opt.id ? 'border-primary bg-surface' : 'border-border bg-background'
-            }`}
-            onPress={() => setSort(opt.id)}
-          >
-            <Text className="text-xs text-textPrimary">{opt.label}</Text>
-          </Pressable>
-        ))}
-      </ScrollView>
-
-      <View className="mb-md flex-row items-center justify-between">
-        <Text className="flex-1 text-sm text-textPrimary">Exclure les départs (Parti)</Text>
-        <Switch value={activeOnly} onValueChange={setActiveOnly} />
-      </View>
-
-      <Pressable
-        accessibilityRole="button"
-        className="rounded-default bg-primary px-md py-md active:opacity-90"
-        onPress={onSearch}
-        testID={`${testID}-submit`}
-      >
-        <Text className="text-center text-sm font-semibold text-white">Rechercher</Text>
-      </Pressable>
-
-      {suggestState.isLoading ? (
-        <Text className="mt-sm text-xs text-textSecondary">Suggestions…</Text>
-      ) : null}
-      {error ? (
-        <Text className="mt-md text-sm text-error">{parseApiError(error)}</Text>
-      ) : null}
-    </View>
-  );
+      );
+    }
+    if (list.length > 0) {
+      return (
+        <Text className="mb-sm mt-xs text-base font-semibold text-textPrimary" testID={`${testID}-results-title`}>
+          Résultats ({list.length})
+        </Text>
+      );
+    }
+    return null;
+  }, [loading, list.length, testID]);
 
   return (
     <View className="flex-1 bg-background" testID={testID}>
-      <FlatList
-        className="flex-1 px-md"
-        contentContainerStyle={{ paddingBottom: 24 }}
-        data={list}
-        keyExtractor={(item: Vehicle) => String(item.id)}
-        ListEmptyComponent={
-          hasSearched && !loading ? (
-            <Text className="mt-lg text-center text-textSecondary" testID={`${testID}-empty`}>
-              Aucun résultat. Ajustez les filtres ou lancez une recherche.
-            </Text>
-          ) : null
-        }
-        ListHeaderComponent={
-          <>
-            {header}
-            {loading ? (
-              <View className="flex-row items-center justify-center py-md">
-                <ActivityIndicator />
-                <Text className="ml-sm text-textSecondary">Recherche…</Text>
-              </View>
-            ) : null}
-            {list.length > 0 ? (
-              <Text className="mb-sm text-base font-semibold text-textPrimary">Résultats</Text>
-            ) : null}
-          </>
-        }
-        renderItem={({ item }) => {
-          const canBook = item.availableSeats > 0 && item.status !== 'PARTI';
-          const stationLabel = stationNameById.get(item.stationId) ?? `Gare #${item.stationId}`;
-          return (
-            <View
-              className="mb-sm rounded-default border border-border bg-surface p-md"
-              testID={`${testID}-result-${item.id}`}
-            >
-              <Text className="text-base font-semibold text-textPrimary">{item.registrationCode}</Text>
-              <Text className="text-sm text-textSecondary">{item.routeLabel}</Text>
-              <Text className="mt-xs text-sm text-textPrimary">{stationLabel}</Text>
-              <Text className="mt-xs text-sm text-textSecondary">
-                Places disponibles : {item.availableSeats} / {item.capacity} · {STATUS_LABEL[item.status]} · Départ :{' '}
-                {formatDeparture(item.departureScheduledAt)}
-              </Text>
-              {item.estimatedWaitMinutes != null ? (
-                <Text className="mt-xs text-sm text-textPrimary">
-                  Attente estimée : ~{item.estimatedWaitMinutes} min
-                </Text>
-              ) : null}
-              {item.fareAmountXof != null ? (
-                <Text className="mt-xs text-sm text-textPrimary">
-                  Tarif indicatif : {item.fareAmountXof.toLocaleString('fr-FR')} F CFA
-                </Text>
-              ) : null}
-              {canReserve && canBook ? (
-                <Pressable
-                  accessibilityRole="button"
-                  className="mt-md self-start rounded-default bg-primary px-md py-sm active:opacity-80"
-                  onPress={() => {
-                    navigation.navigate('SeatMap', {
-                      vehicleId: item.id,
-                      stationId: item.stationId,
-                      stationName: stationLabel,
-                      registrationCode: item.registrationCode,
-                      routeLabel: item.routeLabel,
-                      capacity: item.capacity,
-                    });
-                  }}
-                  testID={`${testID}-reserve-${item.id}`}
-                >
-                  <Text className="text-sm font-semibold text-white">Choisir un siège</Text>
-                </Pressable>
-              ) : (
-                <Text className="mt-md text-sm text-textSecondary">
-                  {canReserve ? 'Aucune place disponible' : 'Connexion voyageur requise pour réserver'}
-                </Text>
-              )}
+      <View className="border-b border-border px-md pb-sm pt-sm">
+        <Text className="mb-xs text-xs font-medium text-textSecondary">Destination (ligne)</Text>
+        <TextInput
+          accessibilityLabel="Recherche destination"
+          className="rounded-default border border-border bg-surface px-md py-sm text-textPrimary"
+          onChangeText={setDestinationQ}
+          placeholder="Ex. Bissau, Gabú…"
+          testID={`${testID}-input-destination`}
+          value={destinationQ}
+        />
+        {suggestions.length > 0 && destinationQ.trim().length >= 2 ? (
+          <View
+            className="mt-xs max-h-36 rounded-default border border-border bg-surface"
+            testID={`${testID}-suggestions`}
+          >
+            {suggestions.map((s) => (
+              <Pressable
+                key={s.label}
+                accessibilityRole="button"
+                className="border-b border-border px-md py-sm active:bg-background"
+                onPress={() => {
+                  setDestinationQ(s.label);
+                  setSuggestions([]);
+                  Keyboard.dismiss();
+                }}
+              >
+                <Text className="text-sm text-textPrimary">{s.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+
+        <Pressable
+          accessibilityRole="button"
+          className="mt-md flex-row items-center justify-center rounded-default border border-border bg-surface px-md py-md active:opacity-90"
+          onPress={() => {
+            Keyboard.dismiss();
+            setFiltersSheetOpen(true);
+          }}
+          testID={`${testID}-open-filters`}
+        >
+          <Text className="text-center text-sm font-semibold text-textPrimary">Filtres</Text>
+          {filterBadgeCount > 0 ? (
+            <View className="ml-sm min-w-[22px] rounded-full bg-primary px-xs py-px">
+              <Text className="text-center text-xs font-bold text-white">{filterBadgeCount}</Text>
             </View>
-          );
+          ) : null}
+        </Pressable>
+
+        <Pressable
+          accessibilityRole="button"
+          className="mt-sm rounded-default bg-primary px-md py-md active:opacity-90"
+          onPress={runSearch}
+          testID={`${testID}-submit`}
+        >
+          <Text className="text-center text-sm font-semibold text-white">Rechercher</Text>
+        </Pressable>
+
+        {suggestState.isLoading ? (
+          <Text className="mt-xs text-xs text-textSecondary">Suggestions…</Text>
+        ) : null}
+        {error ? (
+          <Text className="mt-sm text-sm text-error" testID={`${testID}-error`}>
+            {parseApiError(error)}
+          </Text>
+        ) : null}
+      </View>
+
+      {/*
+        flexGrow sur contentContainerStyle casse souvent la virtualisation FlatList (cellules invisibles).
+        minHeight: 0 + flex: 1 sur le conteneur évite que la liste prenne 0 px de hauteur avec flex parents.
+      */}
+      <View className="flex-1 px-md" style={{ flex: 1, minHeight: 0 }}>
+        <FlatList
+          contentContainerStyle={{ paddingBottom: 24, paddingTop: 8 }}
+          data={list}
+          extraData={list.length}
+          keyExtractor={(item: Vehicle) => String(item.id)}
+          ListEmptyComponent={
+            hasSearched && !loading ? (
+              <Text className="mt-lg text-center text-textSecondary" testID={`${testID}-empty`}>
+                Aucun résultat. Ajustez les filtres ou lancez une recherche.
+              </Text>
+            ) : !hasSearched && !loading ? (
+              <Text className="mt-lg text-center text-sm text-textSecondary" testID={`${testID}-hint`}>
+                Saisissez une destination ou laissez vide pour tout voir, puis appuyez sur Rechercher. Les filtres
+                avancés sont dans Filtres.
+              </Text>
+            ) : null
+          }
+          ListHeaderComponent={listHeader}
+          renderItem={({ item }) => {
+            const canBook = item.availableSeats > 0 && item.status !== 'PARTI';
+            const stationLabel = stationNameById.get(item.stationId) ?? `Gare #${item.stationId}`;
+            return (
+              <View
+                className="mb-sm rounded-default border border-border bg-surface p-md"
+                testID={`${testID}-result-${item.id}`}
+              >
+                <Text className="text-base font-semibold text-textPrimary">{item.registrationCode}</Text>
+                <Text className="text-sm text-textSecondary">{item.routeLabel}</Text>
+                <Text className="mt-xs text-sm text-textPrimary">{stationLabel}</Text>
+                <Text className="mt-xs text-sm text-textSecondary">
+                  Places disponibles : {item.availableSeats} / {item.capacity} · {STATUS_LABEL[item.status]} · Départ :{' '}
+                  {formatDeparture(item.departureScheduledAt)}
+                </Text>
+                {item.estimatedWaitMinutes != null ? (
+                  <Text className="mt-xs text-sm text-textPrimary">
+                    Attente estimée : ~{item.estimatedWaitMinutes} min
+                  </Text>
+                ) : null}
+                {item.fareAmountXof != null ? (
+                  <Text className="mt-xs text-sm text-textPrimary">
+                    Tarif indicatif : {item.fareAmountXof.toLocaleString('fr-FR')} F CFA
+                  </Text>
+                ) : null}
+                {canReserve && canBook ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    className="mt-md self-start rounded-default bg-primary px-md py-sm active:opacity-80"
+                    onPress={() => {
+                      navigation.navigate('SeatMap', {
+                        vehicleId: item.id,
+                        stationId: item.stationId,
+                        stationName: stationLabel,
+                        registrationCode: item.registrationCode,
+                        routeLabel: item.routeLabel,
+                        capacity: item.capacity,
+                      });
+                    }}
+                    testID={`${testID}-reserve-${item.id}`}
+                  >
+                    <Text className="text-sm font-semibold text-white">Choisir un siège</Text>
+                  </Pressable>
+                ) : (
+                  <Text className="mt-md text-sm text-textSecondary">
+                    {canReserve ? 'Aucune place disponible' : 'Connexion voyageur requise pour réserver'}
+                  </Text>
+                )}
+              </View>
+            );
+          }}
+          style={{ flex: 1 }}
+          testID={`${testID}-list`}
+        />
+      </View>
+
+      <SearchFiltersSheet
+        activeOnly={activeOnly}
+        departureFromMinutes={departureFromMinutes}
+        departurePreset={departurePreset}
+        departureToMinutes={departureToMinutes}
+        maxFare={maxFare}
+        minFare={minFare}
+        onApply={applyFiltersAndSearch}
+        onClose={() => {
+          Keyboard.dismiss();
+          setFiltersSheetOpen(false);
         }}
-        testID={`${testID}-list`}
+        onReset={resetFilters}
+        setActiveOnly={setActiveOnly}
+        setDepartureFromMinutes={setDepartureFromMinutes}
+        setDeparturePreset={setDeparturePreset}
+        setDepartureToMinutes={setDepartureToMinutes}
+        setMaxFare={setMaxFare}
+        setMinFare={setMinFare}
+        setSort={setSort}
+        setStationId={setStationId}
+        setStatusFilter={setStatusFilter}
+        sort={sort}
+        stationId={stationId}
+        stations={stations}
+        statusFilter={statusFilter}
+        testID={testID}
+        visible={filtersSheetOpen}
       />
     </View>
   );

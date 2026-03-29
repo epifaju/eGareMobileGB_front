@@ -3,20 +3,19 @@ import * as Notifications from 'expo-notifications';
 import { useEffect, useRef } from 'react';
 
 import { API_BASE_URL } from '@/shared/constants/env';
-import { getAppRoleFromToken, isDriverOrAdminRole } from '@/shared/lib/jwtRole';
 import { tokenStorage } from '@/shared/lib/tokenStorage';
 import { useAppSelector } from '@/shared/store/hooks';
 
 /**
- * Enregistre le jeton Expo Push pour les alertes paliers 80/90/100 % (conducteurs).
- * Nécessite `extra.eas.projectId` (EAS) pour obtenir un jeton en build dev client.
+ * Phase 6 — enregistre le jeton Expo Push pour tout utilisateur connecté (conducteurs : paliers
+ * remplissage ; passagers : rappels départ). Nécessite `extra.eas.projectId` (EAS) en build dev client.
  */
 export default function DriverPushRegistration() {
   const isAuthenticated = useAppSelector((s) => s.auth.isAuthenticated);
   const didRegister = useRef(false);
 
   useEffect(() => {
-    if (!isAuthenticated || !isDriverOrAdminRole(getAppRoleFromToken())) {
+    if (!isAuthenticated) {
       didRegister.current = false;
       return;
     }

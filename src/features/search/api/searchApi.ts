@@ -1,7 +1,7 @@
 import type { FetchBaseQueryError } from '@reduxjs/toolkit/query';
 import type { QueryReturnValue } from '@reduxjs/toolkit/query';
 
-import type { PageVehicle } from '@/features/vehicle/types';
+import type { PageVehicle, Vehicle } from '@/features/vehicle/types';
 import type { DestinationSuggestion, SearchVehiclesParams } from '@/features/search/types';
 import { baseApi } from '@/shared/api/baseApi';
 import { isCacheFresh } from '@/shared/offline/cacheUtils';
@@ -49,6 +49,43 @@ function buildSearchParams(p: SearchVehiclesParams): Record<string, string | num
     out.activeOnly = p.activeOnly;
   }
   return out;
+}
+
+/** Assure un PageVehicle exploitable (évite listes vides si la forme JSON diverge). */
+function normalizePageVehicle(raw: unknown): PageVehicle {
+  const empty: PageVehicle = {
+    content: [],
+    totalElements: 0,
+    totalPages: 0,
+    size: 0,
+    number: 0,
+  };
+  if (raw == null || typeof raw !== 'object') {
+    return empty;
+  }
+  const o = raw as Record<string, unknown>;
+  const content = o.content;
+  if (Array.isArray(content)) {
+    return {
+      content: content as Vehicle[],
+      totalElements: Number(o.totalElements ?? content.length),
+      totalPages: Number(o.totalPages ?? 0),
+      size: Number(o.size ?? content.length),
+      number: Number(o.number ?? 0),
+    };
+  }
+  const page = o.page as Record<string, unknown> | undefined;
+  if (page && Array.isArray(page.content)) {
+    const c = page.content as Vehicle[];
+    return {
+      content: c,
+      totalElements: Number(page.totalElements ?? c.length),
+      totalPages: Number(page.totalPages ?? 0),
+      size: Number(page.size ?? c.length),
+      number: Number(page.number ?? 0),
+    };
+  }
+  return empty;
 }
 
 export const searchApi = baseApi.injectEndpoints({
@@ -99,44 +136,39 @@ export const searchApi = baseApi.injectEndpoints({
     searchVehicles: builder.query<PageVehicle, SearchVehiclesParams>({
       async queryFn(arg, _api, _extraOptions, baseQuery) {
         const cacheKey = searchVehiclesCacheKey(arg);
-        const online = await isOnline();
-        if (online) {
-          const result = (await baseQuery({
-            url: '/api/search/vehicles',
-            params: buildSearchParams(arg),
-          })) as QueryReturnValue<PageVehicle, FetchBaseQueryError, {} | undefined>;
-          if (result.data) {
-            await writeSearchVehiclesCache(cacheKey, result.data);
-          }
-          if (result.error) {
-            const cached = await readSearchVehiclesCache(cacheKey);
-            if (cached) {
-              return {
-                data: cached.data,
-                meta: { cacheSource: 'sqlite' as const, fallback: true } as const,
-              } as QueryReturnValue<PageVehicle, FetchBaseQueryError, {} | undefined>;
-            }
+        /**
+         * Toujours tenter le réseau en premier : NetInfo peut annoncer « hors ligne » alors que
+         * l’émulateur / l’appareil joint quand même l’API (10.0.2.2, LAN, etc.) — l’ancien branchement
+         * « offline d’abord » renvoyait alors un cache vide sans appeler le backend.
+         */
+        const result = (await baseQuery({
+          url: '/api/search/vehicles',
+          params: buildSearchParams(arg),
+        })) as QueryReturnValue<unknown, FetchBaseQueryError, {} | undefined>;
+
+        if (result.error) {
+          const cached = await readSearchVehiclesCache(cacheKey);
+          if (cached) {
+            return {
+              data: normalizePageVehicle(cached.data),
+              meta: { cacheSource: 'sqlite' as const, fallback: true } as const,
+            } as QueryReturnValue<PageVehicle, FetchBaseQueryError, {} | undefined>;
           }
           return result as QueryReturnValue<PageVehicle, FetchBaseQueryError, {} | undefined>;
         }
-        const cached = await readSearchVehiclesCache(cacheKey);
-        if (cached && isCacheFresh(cached.updatedAt, OFFLINE_CACHE_TTL_MS)) {
+
+        if (result.data !== undefined) {
+          const page = normalizePageVehicle(result.data);
+          await writeSearchVehiclesCache(cacheKey, page);
           return {
-            data: cached.data,
-            meta: { cacheSource: 'sqlite' as const },
+            data: page,
           } as QueryReturnValue<PageVehicle, FetchBaseQueryError, {} | undefined>;
         }
-        if (cached) {
-          return {
-            data: cached.data,
-            meta: { cacheSource: 'sqlite' as const, stale: true },
-          } as QueryReturnValue<PageVehicle, FetchBaseQueryError, {} | undefined>;
-        }
+
         return {
           error: {
             status: 'FETCH_ERROR',
-            error:
-              'Aucun résultat de recherche hors ligne. Lancez une recherche une fois en ligne pour mettre en cache.',
+            error: 'Réponse recherche vide ou invalide.',
           },
         } as QueryReturnValue<PageVehicle, FetchBaseQueryError, {} | undefined>;
       },
