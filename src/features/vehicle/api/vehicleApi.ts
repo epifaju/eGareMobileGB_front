@@ -13,6 +13,7 @@ import type {
   VehicleStatus,
 } from '@/features/vehicle/types';
 import { baseApi } from '@/shared/api/baseApi';
+import { i18n } from '@/shared/i18n';
 import { verifyBoardingQrJwt } from '@/shared/lib/boardingQrJwt';
 import { isCacheFresh } from '@/shared/offline/cacheUtils';
 import { OFFLINE_CACHE_TTL_MS } from '@/shared/offline/constants';
@@ -254,7 +255,7 @@ export const vehicleApi = baseApi.injectEndpoints({
             return {
               error: {
                 status: 400,
-                data: { message: local.reason },
+                data: { message: i18n.t(`boardingQr.${local.code}`) },
               } as FetchBaseQueryError,
             };
           }

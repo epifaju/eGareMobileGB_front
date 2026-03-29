@@ -12,35 +12,46 @@ const CLAIM_VEHICLE_ID_SPEC = 'vehicleId';
 const CLAIM_SEAT_SPEC = 'seat';
 const SEAT_UNASSIGNED = -1;
 
+export type BoardingQrRejectCode =
+  | 'PUBLIC_KEY_MISSING'
+  | 'PUBLIC_KEY_INVALID'
+  | 'SIGNATURE_INVALID'
+  | 'SIGNATURE_OR_EXPIRED'
+  | 'INVALID_TICKET_TYPE'
+  | 'TICKET_EXPIRED'
+  | 'WRONG_VEHICLE'
+  | 'BOOKING_REF_MISSING';
+
+export type VerifyBoardingQrResult =
+  | { ok: true; bookingId: number; seatNumber: number | null }
+  | { ok: false; code: BoardingQrRejectCode };
+
 /**
  * Vérifie un JWT RS256 émis par le backend (BoardingQrJwtService), sans appel réseau.
  * Nécessite la clé publique (EXPO_PUBLIC_BOARDING_JWT_PUBLIC_KEY), pas la clé privée.
  */
-export function verifyBoardingQrJwt(
-  token: string,
-  expectedVehicleId: number,
-): { ok: true; bookingId: number; seatNumber: number | null } | { ok: false; reason: string } {
+export function verifyBoardingQrJwt(token: string, expectedVehicleId: number): VerifyBoardingQrResult {
   const pem = BOARDING_JWT_PUBLIC_KEY_PEM;
   if (!pem || !pem.includes('BEGIN PUBLIC')) {
     return {
       ok: false,
-      reason: 'Clé publique QR manquante (EXPO_PUBLIC_BOARDING_JWT_PUBLIC_KEY).',
+      code: 'PUBLIC_KEY_MISSING',
     };
   }
   let pub: RSAKey;
   try {
     pub = KEYUTIL.getKey(pem) as RSAKey;
   } catch {
-    return { ok: false, reason: 'Clé publique QR illisible.' };
+    return { ok: false, code: 'PUBLIC_KEY_INVALID' };
   }
   const trimmed = token.trim();
   try {
     const okJwt = KJUR.jws.JWS.verifyJWT(trimmed, pub, { alg: ['RS256'] });
     if (!okJwt) {
-      return { ok: false, reason: 'Signature du billet invalide.' };
+      return { ok: false, code: 'SIGNATURE_INVALID' };
     }
   } catch {
-    return { ok: false, reason: 'Signature du billet invalide ou jeton expiré.' };
+    return { ok: false, code: 'SIGNATURE_OR_EXPIRED' };
   }
   const parsed = KJUR.jws.JWS.parse(trimmed);
   const rawPayload = parsed.payloadObj;
@@ -49,19 +60,19 @@ export function verifyBoardingQrJwt(
       ? (JSON.parse(rawPayload) as Record<string, unknown>)
       : (rawPayload as Record<string, unknown>);
   if (payload[CLAIM_TYP] !== TYP_BOARDING_QR) {
-    return { ok: false, reason: 'Type de billet invalide.' };
+    return { ok: false, code: 'INVALID_TICKET_TYPE' };
   }
   const expSec = payload.exp;
   if (typeof expSec === 'number' && expSec * 1000 < Date.now()) {
-    return { ok: false, reason: 'Billet expiré.' };
+    return { ok: false, code: 'TICKET_EXPIRED' };
   }
   const vid = asPositiveInt(payload[CLAIM_VEHICLE_ID_SPEC] ?? payload[CLAIM_VEHICLE_ID]);
   if (vid == null || vid !== expectedVehicleId) {
-    return { ok: false, reason: 'Ce billet n’est pas valable pour ce véhicule.' };
+    return { ok: false, code: 'WRONG_VEHICLE' };
   }
   const bid = asPositiveInt(payload[CLAIM_BOOKING_ID_SPEC] ?? payload[CLAIM_BOOKING_ID]);
   if (bid == null) {
-    return { ok: false, reason: 'Référence réservation manquante dans le QR.' };
+    return { ok: false, code: 'BOOKING_REF_MISSING' };
   }
   const seatRaw = payload[CLAIM_SEAT_SPEC] ?? payload[CLAIM_SEAT];
   const seatNumber = seatFromClaim(seatRaw);

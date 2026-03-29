@@ -2,6 +2,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Constants from 'expo-constants';
 import * as Location from 'expo-location';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   FlatList,
@@ -16,6 +17,7 @@ import type { MainStackParamList } from '@/app/navigation/navigationTypes';
 import { useGetStationsQuery } from '@/features/station/api/stationApi';
 import type { Station } from '@/features/station/types';
 import { useGetMapVehiclesQuery } from '@/features/vehicle/api/vehicleApi';
+import type { VehicleStatus } from '@/features/vehicle/types';
 import { useMapVehiclesRealtime } from '@/features/vehicle/hooks/useMapVehiclesRealtime';
 import { parseApiError } from '@/shared/utils/apiError';
 
@@ -37,6 +39,7 @@ export default function StationsMapScreen({
   navigation,
   testID = 'screen-stations-map',
 }: StationsMapScreenProps & { testID?: string }) {
+  const { t } = useTranslation();
   const mapRef = useRef<MapView>(null);
   const { data, isLoading, isError, error, refetch, isFetching } = useGetStationsQuery({
     page: 0,
@@ -48,18 +51,20 @@ export default function StationsMapScreen({
 
   const stations = data?.page.content ?? [];
   const liveVehicles = mapVehicles?.vehicles ?? [];
-  const stationsCacheBadge =
-    data?.cache?.source === 'sqlite'
-      ? data.cache.stale
-        ? 'Gares: données locales (obsolètes)'
-        : 'Gares: données locales'
-      : null;
-  const cacheBadge =
-    mapVehicles?.cache?.source === 'sqlite'
-      ? mapVehicles.cache.stale
-        ? 'Données locales (obsolètes)'
-        : 'Données locales'
-      : null;
+
+  const stationsCacheBadge = useMemo(() => {
+    if (data?.cache?.source !== 'sqlite') {
+      return null;
+    }
+    return data.cache.stale ? t('stationsMap.stationsCacheStale') : t('stationsMap.stationsCacheLocal');
+  }, [data?.cache, t]);
+
+  const cacheBadge = useMemo(() => {
+    if (mapVehicles?.cache?.source !== 'sqlite') {
+      return null;
+    }
+    return mapVehicles.cache.stale ? t('stationsMap.vehiclesCacheStale') : t('stationsMap.vehiclesCacheLocal');
+  }, [mapVehicles?.cache, t]);
 
   const showMap = useMemo(() => {
     if (Platform.OS === 'web') {
@@ -98,11 +103,18 @@ export default function StationsMapScreen({
 
   const listForWeb = useMemo(() => stations, [stations]);
 
+  const noMapHint = useMemo(() => {
+    if (Platform.OS === 'web') {
+      return t('stationsMap.webMapUnavailable');
+    }
+    return t('stationsMap.androidMapsSetup');
+  }, [t]);
+
   if (isLoading && !data) {
     return (
       <View className="flex-1 items-center justify-center bg-background" testID={`${testID}-loading`}>
         <ActivityIndicator size="large" />
-        <Text className="mt-md text-textSecondary">Chargement des gares…</Text>
+        <Text className="mt-md text-textSecondary">{t('stationsMap.loadingStations')}</Text>
       </View>
     );
   }
@@ -116,14 +128,10 @@ export default function StationsMapScreen({
   }
 
   if (!showMap) {
-    const hint =
-      Platform.OS === 'web'
-        ? 'La carte n’est pas disponible sur le web dans cette version.'
-        : 'Carte Google indisponible : ajoutez GOOGLE_MAPS_ANDROID_API_KEY dans mobile/.env puis reconstruisez (npx expo run:android). Voir docs/MAPS_ANDROID.md';
     return (
       <View className="flex-1 bg-background px-md pt-md" testID={testID}>
-        <Text className="mb-sm text-sm text-textSecondary">{hint}</Text>
-        <Text className="mb-md text-sm text-textPrimary">Liste des gares :</Text>
+        <Text className="mb-sm text-sm text-textSecondary">{noMapHint}</Text>
+        <Text className="mb-md text-sm text-textPrimary">{t('stationsMap.stationListHeading')}</Text>
         <FlatList
           data={listForWeb}
           keyExtractor={(item: Station) => String(item.id)}
@@ -155,9 +163,7 @@ export default function StationsMapScreen({
 
   return (
     <View className="flex-1 bg-background" testID={testID}>
-      <Text className="px-md pt-sm text-xs text-textSecondary">
-        Marqueurs bleus = gares · rouges = véhicules actifs (temps réel).
-      </Text>
+      <Text className="px-md pt-sm text-xs text-textSecondary">{t('stationsMap.mapLegend')}</Text>
       {stationsCacheBadge ? (
         <Text className="px-md pt-xs text-xs text-textSecondary">{stationsCacheBadge}</Text>
       ) : null}
@@ -165,9 +171,7 @@ export default function StationsMapScreen({
         <Text className="px-md pt-xs text-xs text-textSecondary">{cacheBadge}</Text>
       ) : null}
       {locationPerm === 'denied' ? (
-        <Text className="px-md pt-xs text-xs text-warning">
-          Position refusée : carte centrée sur le pays. Activez la localisation pour vous centrer.
-        </Text>
+        <Text className="px-md pt-xs text-xs text-warning">{t('stationsMap.locationDenied')}</Text>
       ) : null}
       <MapView
         ref={mapRef}
@@ -195,7 +199,7 @@ export default function StationsMapScreen({
               <View className="max-w-xs p-sm">
                 <Text className="font-semibold text-textPrimary">{s.name}</Text>
                 {s.city ? <Text className="text-sm text-textSecondary">{s.city}</Text> : null}
-                <Text className="mt-sm text-sm text-primary">Appuyer pour les véhicules →</Text>
+                <Text className="mt-sm text-sm text-primary">{t('stationsMap.calloutVehicles')}</Text>
               </View>
             </Callout>
           </Marker>
@@ -208,11 +212,20 @@ export default function StationsMapScreen({
               coordinate={{ latitude: v.currentLatitude as number, longitude: v.currentLongitude as number }}
               pinColor="red"
               title={`${v.registrationCode}`}
-              description={`${v.routeLabel} · ${v.status} · ~${v.estimatedWaitMinutes ?? '?'} min`}
+              description={t('stationsMap.markerVehicleDesc', {
+                route: v.routeLabel,
+                status: t(`vehicleStatus.${v.status as VehicleStatus}`),
+                wait:
+                  v.estimatedWaitMinutes != null
+                    ? String(v.estimatedWaitMinutes)
+                    : t('stationsMap.waitUnknown'),
+              })}
               onCalloutPress={() =>
                 navigation.navigate('StationVehicles', {
                   stationId: v.stationId,
-                  stationName: stations.find((s) => s.id === v.stationId)?.name ?? `Gare #${v.stationId}`,
+                  stationName:
+                    stations.find((s) => s.id === v.stationId)?.name ??
+                    t('search.stationHash', { id: v.stationId }),
                 })
               }
             />

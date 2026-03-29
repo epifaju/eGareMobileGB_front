@@ -1,4 +1,5 @@
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useTranslation } from 'react-i18next';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -23,32 +24,26 @@ import type { SearchVehiclesParams } from '@/features/search/types';
 import { useGetStationsQuery } from '@/features/station/api/stationApi';
 import type { Station } from '@/features/station/types';
 import type { Vehicle, VehicleStatus } from '@/features/vehicle/types';
+import { intlLocaleFromLanguage } from '@/shared/lib/intlLocale';
 import { getAppRoleFromToken } from '@/shared/lib/jwtRole';
 import { parseApiError } from '@/shared/utils/apiError';
 
-const STATUS_LABEL: Record<VehicleStatus, string> = {
-  EN_FILE: 'En file',
-  REMPLISSAGE: 'Remplissage',
-  COMPLET: 'Complet',
-  PARTI: 'Parti',
-};
-
 const STATUS_OPTIONS: VehicleStatus[] = ['EN_FILE', 'REMPLISSAGE', 'COMPLET', 'PARTI'];
-const SORT_OPTIONS = [
-  { id: 'departureScheduledAt,asc', label: 'Départ ↑' },
-  { id: 'departureScheduledAt,desc', label: 'Départ ↓' },
-  { id: 'fareAmountXof,asc', label: 'Tarif ↑' },
-  { id: 'fareAmountXof,desc', label: 'Tarif ↓' },
-] as const;
 
-const DEFAULT_SORT: (typeof SORT_OPTIONS)[number]['id'] = 'departureScheduledAt,asc';
+export type SearchSortId =
+  | 'departureScheduledAt,asc'
+  | 'departureScheduledAt,desc'
+  | 'fareAmountXof,asc'
+  | 'fareAmountXof,desc';
 
-function formatDeparture(iso: string | null): string {
+const DEFAULT_SORT: SearchSortId = 'departureScheduledAt,asc';
+
+function formatDeparture(iso: string | null, locale: string): string {
   if (!iso) {
     return '—';
   }
   try {
-    return new Date(iso).toLocaleString('fr-FR', {
+    return new Date(iso).toLocaleString(locale, {
       hour: '2-digit',
       minute: '2-digit',
       day: '2-digit',
@@ -67,7 +62,7 @@ function countActiveFilters(p: {
   departurePreset: 'none' | 'next2h' | 'next6h' | 'today';
   departureFromMinutes: string;
   departureToMinutes: string;
-  sort: (typeof SORT_OPTIONS)[number]['id'];
+  sort: SearchSortId;
   activeOnly: boolean;
 }): number {
   let n = 0;
@@ -124,9 +119,19 @@ type FiltersSheetProps = {
   setDepartureFromMinutes: (v: string) => void;
   departureToMinutes: string;
   setDepartureToMinutes: (v: string) => void;
-  sort: (typeof SORT_OPTIONS)[number]['id'];
-  setSort: (v: (typeof SORT_OPTIONS)[number]['id']) => void;
+  sort: SearchSortId;
+  setSort: (v: SearchSortId) => void;
 };
+
+const SORT_ROWS: [
+  SearchSortId,
+  'search.sortDepartureAsc' | 'search.sortDepartureDesc' | 'search.sortFareAsc' | 'search.sortFareDesc',
+][] = [
+  ['departureScheduledAt,asc', 'search.sortDepartureAsc'],
+  ['departureScheduledAt,desc', 'search.sortDepartureDesc'],
+  ['fareAmountXof,asc', 'search.sortFareAsc'],
+  ['fareAmountXof,desc', 'search.sortFareDesc'],
+];
 
 function SearchFiltersSheet({
   visible,
@@ -154,7 +159,13 @@ function SearchFiltersSheet({
   sort,
   setSort,
 }: FiltersSheetProps) {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
+
+  const sortOptions = useMemo(
+    () => SORT_ROWS.map(([id, key]) => ({ id, label: t(key) })),
+    [t],
+  );
 
   return (
     <Modal
@@ -172,14 +183,14 @@ function SearchFiltersSheet({
         <View className="flex-1 justify-end">
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Fermer les filtres"
+            accessibilityLabel={t('search.closeFiltersA11y')}
             className="absolute bottom-0 left-0 right-0 top-0 bg-black/50"
             onPress={onClose}
             testID={`${testID}-filters-backdrop`}
           />
           <View className="max-h-[88%] w-full rounded-t-2xl border-t border-border bg-background">
             <View className="flex-row items-center justify-between border-b border-border px-md py-sm">
-              <Text className="text-lg font-semibold text-textPrimary">Filtres</Text>
+              <Text className="text-lg font-semibold text-textPrimary">{t('search.filtersTitle')}</Text>
               <Pressable
                 accessibilityRole="button"
                 className="px-sm py-xs active:opacity-70"
@@ -187,7 +198,7 @@ function SearchFiltersSheet({
                 onPress={onClose}
                 testID={`${testID}-filters-close`}
               >
-                <Text className="text-base font-medium text-primary">Fermer</Text>
+                <Text className="text-base font-medium text-primary">{t('search.close')}</Text>
               </Pressable>
             </View>
             <ScrollView
@@ -206,7 +217,7 @@ function SearchFiltersSheet({
                   onPress={() => setStationId(undefined)}
                   testID={`${testID}-station-all`}
                 >
-                  <Text className="text-xs text-textPrimary">Toutes</Text>
+                  <Text className="text-xs text-textPrimary">{t('common.all')}</Text>
                 </Pressable>
                 {stations.map((s) => {
                   const selected = stationId === s.id;
@@ -228,7 +239,7 @@ function SearchFiltersSheet({
                 })}
               </ScrollView>
 
-              <Text className="mb-xs text-xs font-medium text-textSecondary">Statut véhicule</Text>
+              <Text className="mb-xs text-xs font-medium text-textSecondary">{t('search.vehicleStatus')}</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-md">
                 <Pressable
                   className={`mr-xs rounded-full border px-md py-sm ${
@@ -246,29 +257,29 @@ function SearchFiltersSheet({
                     }`}
                     onPress={() => setStatusFilter(st)}
                   >
-                    <Text className="text-xs text-textPrimary">{STATUS_LABEL[st]}</Text>
+                    <Text className="text-xs text-textPrimary">{t(`vehicleStatus.${st}`)}</Text>
                   </Pressable>
                 ))}
               </ScrollView>
 
               <View className="mb-md flex-row gap-sm">
                 <View className="flex-1">
-                  <Text className="mb-xs text-xs text-textSecondary">Tarif min (XOF)</Text>
+                  <Text className="mb-xs text-xs text-textSecondary">{t('search.fareMin')}</Text>
                   <TextInput
                     className="rounded-default border border-border bg-surface px-md py-sm text-textPrimary"
                     keyboardType="number-pad"
                     onChangeText={setMinFare}
-                    placeholder="Min"
+                    placeholder={t('search.min')}
                     value={minFare}
                   />
                 </View>
                 <View className="flex-1">
-                  <Text className="mb-xs text-xs text-textSecondary">Tarif max (XOF)</Text>
+                  <Text className="mb-xs text-xs text-textSecondary">{t('search.fareMax')}</Text>
                   <TextInput
                     className="rounded-default border border-border bg-surface px-md py-sm text-textPrimary"
                     keyboardType="number-pad"
                     onChangeText={setMaxFare}
-                    placeholder="Max"
+                    placeholder={t('search.max')}
                     value={maxFare}
                   />
                 </View>
@@ -281,7 +292,7 @@ function SearchFiltersSheet({
                   }`}
                   onPress={() => setDeparturePreset(departurePreset === 'next2h' ? 'none' : 'next2h')}
                 >
-                  <Text className="text-xs text-textPrimary">Départ dans les 2 h</Text>
+                  <Text className="text-xs text-textPrimary">{t('search.depNext2h')}</Text>
                 </Pressable>
                 <Pressable
                   className={`rounded-full border px-md py-sm ${
@@ -289,7 +300,7 @@ function SearchFiltersSheet({
                   }`}
                   onPress={() => setDeparturePreset(departurePreset === 'next6h' ? 'none' : 'next6h')}
                 >
-                  <Text className="text-xs text-textPrimary">Départ dans les 6 h</Text>
+                  <Text className="text-xs text-textPrimary">{t('search.depNext6h')}</Text>
                 </Pressable>
                 <Pressable
                   className={`rounded-full border px-md py-sm ${
@@ -303,12 +314,12 @@ function SearchFiltersSheet({
 
               <View className="mb-md flex-row gap-sm">
                 <View className="flex-1">
-                  <Text className="mb-xs text-xs text-textSecondary">Départ min (dans X min)</Text>
+                  <Text className="mb-xs text-xs text-textSecondary">{t('search.depMinMinutes')}</Text>
                   <TextInput
                     className="rounded-default border border-border bg-surface px-md py-sm text-textPrimary"
                     keyboardType="number-pad"
                     onChangeText={setDepartureFromMinutes}
-                    placeholder="ex. 15"
+                    placeholder={t('search.placeholderMinutes')}
                     value={departureFromMinutes}
                   />
                 </View>
@@ -318,15 +329,15 @@ function SearchFiltersSheet({
                     className="rounded-default border border-border bg-surface px-md py-sm text-textPrimary"
                     keyboardType="number-pad"
                     onChangeText={setDepartureToMinutes}
-                    placeholder="ex. 180"
+                    placeholder={t('search.placeholderMinutesTo')}
                     value={departureToMinutes}
                   />
                 </View>
               </View>
 
-              <Text className="mb-xs text-xs font-medium text-textSecondary">Tri</Text>
+              <Text className="mb-xs text-xs font-medium text-textSecondary">{t('search.sort')}</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-md">
-                {SORT_OPTIONS.map((opt) => (
+                {sortOptions.map((opt) => (
                   <Pressable
                     key={opt.id}
                     className={`mr-xs rounded-full border px-md py-sm ${
@@ -340,7 +351,7 @@ function SearchFiltersSheet({
               </ScrollView>
 
               <View className="mb-md flex-row items-center justify-between">
-                <Text className="flex-1 text-sm text-textPrimary">Exclure les départs (Parti)</Text>
+                <Text className="flex-1 text-sm text-textPrimary">{t('search.excludeDeparted')}</Text>
                 <Switch value={activeOnly} onValueChange={setActiveOnly} />
               </View>
 
@@ -364,7 +375,7 @@ function SearchFiltersSheet({
                 onPress={onApply}
                 testID={`${testID}-filters-apply`}
               >
-                <Text className="text-center text-sm font-semibold text-white">Appliquer et rechercher</Text>
+                <Text className="text-center text-sm font-semibold text-white">{t('search.applySearch')}</Text>
               </Pressable>
             </View>
           </View>
@@ -383,6 +394,9 @@ export default function SearchDestinationsScreen({
   navigation,
   testID = 'screen-search-destination',
 }: SearchDestinationsScreenProps & { testID?: string }) {
+  const { t, i18n } = useTranslation();
+  const dateLocale = intlLocaleFromLanguage(i18n.language);
+
   const [destinationQ, setDestinationQ] = useState('');
   const [suggestions, setSuggestions] = useState<{ label: string }[]>([]);
   const [stationId, setStationId] = useState<number | undefined>(undefined);
@@ -393,7 +407,7 @@ export default function SearchDestinationsScreen({
   const [departurePreset, setDeparturePreset] = useState<'none' | 'next2h' | 'next6h' | 'today'>('none');
   const [departureFromMinutes, setDepartureFromMinutes] = useState('');
   const [departureToMinutes, setDepartureToMinutes] = useState('');
-  const [sort, setSort] = useState<(typeof SORT_OPTIONS)[number]['id']>(DEFAULT_SORT);
+  const [sort, setSort] = useState<SearchSortId>(DEFAULT_SORT);
   const [hasSearched, setHasSearched] = useState(false);
   const [filtersSheetOpen, setFiltersSheetOpen] = useState(false);
   /** Résultats affichés : source de vérité = promesse unwrap (évite searchState.data désynchronisé avec le lazy query). */
@@ -608,29 +622,29 @@ export default function SearchDestinationsScreen({
       return (
         <View className="flex-row items-center justify-center py-sm">
           <ActivityIndicator />
-          <Text className="ml-sm text-textSecondary">Recherche…</Text>
+          <Text className="ml-sm text-textSecondary">{t('search.searching')}</Text>
         </View>
       );
     }
     if (list.length > 0) {
       return (
         <Text className="mb-sm mt-xs text-base font-semibold text-textPrimary" testID={`${testID}-results-title`}>
-          Résultats ({list.length})
+          {t('search.results', { count: list.length })}
         </Text>
       );
     }
     return null;
-  }, [loading, list.length, testID]);
+  }, [loading, list.length, testID, t, i18n.language]);
 
   return (
     <View className="flex-1 bg-background" testID={testID}>
       <View className="border-b border-border px-md pb-sm pt-sm">
-        <Text className="mb-xs text-xs font-medium text-textSecondary">Destination (ligne)</Text>
+        <Text className="mb-xs text-xs font-medium text-textSecondary">{t('search.destinationLine')}</Text>
         <TextInput
-          accessibilityLabel="Recherche destination"
+          accessibilityLabel={t('search.destinationA11y')}
           className="rounded-default border border-border bg-surface px-md py-sm text-textPrimary"
           onChangeText={setDestinationQ}
-          placeholder="Ex. Bissau, Gabú…"
+          placeholder={t('search.destinationPlaceholder')}
           testID={`${testID}-input-destination`}
           value={destinationQ}
         />
@@ -665,7 +679,7 @@ export default function SearchDestinationsScreen({
           }}
           testID={`${testID}-open-filters`}
         >
-          <Text className="text-center text-sm font-semibold text-textPrimary">Filtres</Text>
+          <Text className="text-center text-sm font-semibold text-textPrimary">{t('search.filters')}</Text>
           {filterBadgeCount > 0 ? (
             <View className="ml-sm min-w-[22px] rounded-full bg-primary px-xs py-px">
               <Text className="text-center text-xs font-bold text-white">{filterBadgeCount}</Text>
@@ -683,7 +697,7 @@ export default function SearchDestinationsScreen({
         </Pressable>
 
         {suggestState.isLoading ? (
-          <Text className="mt-xs text-xs text-textSecondary">Suggestions…</Text>
+          <Text className="mt-xs text-xs text-textSecondary">{t('search.suggestionsLoading')}</Text>
         ) : null}
         {error ? (
           <Text className="mt-sm text-sm text-error" testID={`${testID}-error`}>
@@ -705,19 +719,21 @@ export default function SearchDestinationsScreen({
           ListEmptyComponent={
             hasSearched && !loading ? (
               <Text className="mt-lg text-center text-textSecondary" testID={`${testID}-empty`}>
-                Aucun résultat. Ajustez les filtres ou lancez une recherche.
+                {t('search.empty')}
               </Text>
             ) : !hasSearched && !loading ? (
               <Text className="mt-lg text-center text-sm text-textSecondary" testID={`${testID}-hint`}>
-                Saisissez une destination ou laissez vide pour tout voir, puis appuyez sur Rechercher. Les filtres
-                avancés sont dans Filtres.
+                {t('search.hint')}
               </Text>
             ) : null
           }
           ListHeaderComponent={listHeader}
           renderItem={({ item }) => {
             const canBook = item.availableSeats > 0 && item.status !== 'PARTI';
-            const stationLabel = stationNameById.get(item.stationId) ?? `Gare #${item.stationId}`;
+            const stationLabel =
+              stationNameById.get(item.stationId) ?? t('search.stationHash', { id: item.stationId });
+            const fareStr =
+              item.fareAmountXof != null ? item.fareAmountXof.toLocaleString(dateLocale) : '';
             return (
               <View
                 className="mb-sm rounded-default border border-border bg-surface p-md"
@@ -727,17 +743,17 @@ export default function SearchDestinationsScreen({
                 <Text className="text-sm text-textSecondary">{item.routeLabel}</Text>
                 <Text className="mt-xs text-sm text-textPrimary">{stationLabel}</Text>
                 <Text className="mt-xs text-sm text-textSecondary">
-                  Places disponibles : {item.availableSeats} / {item.capacity} · {STATUS_LABEL[item.status]} · Départ :{' '}
-                  {formatDeparture(item.departureScheduledAt)}
+                  {t('search.availableSeats')} : {item.availableSeats} / {item.capacity} · {t(`vehicleStatus.${item.status}`)} ·{' '}
+                  {t('search.departure')}: {formatDeparture(item.departureScheduledAt, dateLocale)}
                 </Text>
                 {item.estimatedWaitMinutes != null ? (
                   <Text className="mt-xs text-sm text-textPrimary">
-                    Attente estimée : ~{item.estimatedWaitMinutes} min
+                    {t('search.waitEstimate')} : {t('search.waitMinutes', { count: item.estimatedWaitMinutes })}
                   </Text>
                 ) : null}
                 {item.fareAmountXof != null ? (
                   <Text className="mt-xs text-sm text-textPrimary">
-                    Tarif indicatif : {item.fareAmountXof.toLocaleString('fr-FR')} F CFA
+                    {t('search.fareIndicative')} : {t('search.currencyFcfa', { amount: fareStr })}
                   </Text>
                 ) : null}
                 {canReserve && canBook ? (
@@ -756,11 +772,11 @@ export default function SearchDestinationsScreen({
                     }}
                     testID={`${testID}-reserve-${item.id}`}
                   >
-                    <Text className="text-sm font-semibold text-white">Choisir un siège</Text>
+                    <Text className="text-sm font-semibold text-white">{t('search.chooseSeat')}</Text>
                   </Pressable>
                 ) : (
                   <Text className="mt-md text-sm text-textSecondary">
-                    {canReserve ? 'Aucune place disponible' : 'Connexion voyageur requise pour réserver'}
+                    {canReserve ? t('search.noSeats') : t('search.loginToBook')}
                   </Text>
                 )}
               </View>

@@ -1,6 +1,7 @@
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useTranslation } from 'react-i18next';
 import { useMemo } from 'react';
 import {
   ActivityIndicator,
@@ -12,41 +13,29 @@ import {
 } from 'react-native';
 
 import type {
+  AgentStackParamList,
   DriverStackParamList,
   MainStackParamList,
   PassengerStackParamList,
 } from '@/app/navigation/navigationTypes';
 import { useGetStationsQuery } from '@/features/station/api/stationApi';
 import type { Station } from '@/features/station/types';
+import LanguageSwitcher from '@/shared/components/LanguageSwitcher';
 import { getAppRoleFromToken } from '@/shared/lib/jwtRole';
 import { parseApiError } from '@/shared/utils/apiError';
 
-function cacheAgeLabel(dataUpdatedAt: number): string {
-  if (!dataUpdatedAt) {
-    return '';
-  }
-  const ms = Date.now() - dataUpdatedAt;
-  const minutes = Math.floor(ms / 60000);
-  if (minutes < 1) {
-    return 'à l’instant';
-  }
-  if (minutes < 60) {
-    return `il y a ${minutes} min`;
-  }
-  const hours = Math.floor(minutes / 60);
-  return `il y a ${hours} h`;
-}
-
 export type HomeStationsScreenProps =
-  | Pick<NativeStackScreenProps<PassengerStackParamList, 'Home'>, 'route'>
-  | Pick<NativeStackScreenProps<DriverStackParamList, 'DriverHome'>, 'route'>;
+  | NativeStackScreenProps<PassengerStackParamList, 'Home'>
+  | NativeStackScreenProps<DriverStackParamList, 'DriverHome'>
+  | NativeStackScreenProps<AgentStackParamList, 'AgentHome'>;
 
 export default function HomeStationsScreen({
   route,
   testID = 'screen-home-stations',
 }: HomeStationsScreenProps & { testID?: string }) {
+  const { t, i18n } = useTranslation();
   const navigation = useNavigation<NativeStackNavigationProp<MainStackParamList>>();
-  const variant = route.name === 'DriverHome' ? 'driver' : 'passenger';
+  const variant = route.name === 'Home' ? 'passenger' : 'driver';
   const showReservationsEntry = variant === 'passenger' && getAppRoleFromToken() === 'USER';
 
   const stationsQueryArg = { page: 0, size: 50 } as const;
@@ -56,20 +45,35 @@ export default function HomeStationsScreen({
   );
   const cacheMeta = data?.cache;
 
-  const age = useMemo(() => cacheAgeLabel(fulfilledTimeStamp ?? 0), [fulfilledTimeStamp]);
+  const age = useMemo(() => {
+    const dataUpdatedAt = fulfilledTimeStamp ?? 0;
+    if (!dataUpdatedAt) {
+      return '';
+    }
+    const ms = Date.now() - dataUpdatedAt;
+    const minutes = Math.floor(ms / 60000);
+    if (minutes < 1) {
+      return t('home.cacheJustNow');
+    }
+    if (minutes < 60) {
+      return t('home.cacheMinutesAgo', { count: minutes });
+    }
+    const hours = Math.floor(minutes / 60);
+    return t('home.cacheHoursAgo', { count: hours });
+  }, [fulfilledTimeStamp, t, i18n.language]);
 
   const cacheHint = useMemo(() => {
     if (cacheMeta?.source !== 'sqlite') {
       return '';
     }
     if (cacheMeta.fallback) {
-      return ' · cache SQLite (réseau indisponible)';
+      return t('home.cacheSqliteOffline');
     }
     if (cacheMeta.stale) {
-      return ' · cache SQLite (>24 h, à rafraîchir)';
+      return t('home.cacheSqliteStale');
     }
-    return ' · cache SQLite (hors ligne)';
-  }, [cacheMeta]);
+    return t('home.cacheSqliteOfflineShort');
+  }, [cacheMeta, t, i18n.language]);
 
   const list = data?.page.content ?? [];
   const showInitialLoading = isLoading && !data;
@@ -79,7 +83,7 @@ export default function HomeStationsScreen({
     return (
       <View className="flex-1 items-center justify-center bg-background" testID={`${testID}-loading`}>
         <ActivityIndicator size="large" />
-        <Text className="mt-md text-textSecondary">Chargement des gares…</Text>
+        <Text className="mt-md text-textSecondary">{t('home.loadingStations')}</Text>
       </View>
     );
   }
@@ -88,24 +92,23 @@ export default function HomeStationsScreen({
     return (
       <View className="flex-1 items-center justify-center bg-background px-md" testID={`${testID}-error`}>
         <Text className="mb-md text-center text-error">{parseApiError(error)}</Text>
-        <Text className="text-center text-sm text-textSecondary">
-          Vérifiez le réseau ou l’URL API (émulateur Android : 10.0.2.2:8080).
-        </Text>
+        <Text className="text-center text-sm text-textSecondary">{t('auth.networkErrorHint')}</Text>
       </View>
     );
   }
 
-  const ctaLabel = variant === 'driver' ? 'Gérer les véhicules →' : 'Voir les véhicules →';
+  const ctaLabel = variant === 'driver' ? t('home.ctaDriver') : t('home.ctaPassenger');
 
   return (
     <View className="flex-1 bg-background" testID={testID}>
+      <LanguageSwitcher testID={`${testID}-language`} />
       <Pressable
         accessibilityRole="button"
         className="mx-md mt-sm rounded-default border border-border bg-surface px-md py-sm active:opacity-80"
         onPress={() => navigation.navigate('StationsMap')}
         testID={`${testID}-link-map`}
       >
-        <Text className="text-center text-sm font-semibold text-textPrimary">Carte des gares</Text>
+        <Text className="text-center text-sm font-semibold text-textPrimary">{t('home.mapLink')}</Text>
       </Pressable>
       <Pressable
         accessibilityRole="button"
@@ -113,7 +116,7 @@ export default function HomeStationsScreen({
         onPress={() => navigation.navigate('LowBandwidthStations')}
         testID={`${testID}-link-low-bandwidth`}
       >
-        <Text className="text-center text-sm font-semibold text-textPrimary">Vue réseau faible (&lt;50KB)</Text>
+        <Text className="text-center text-sm font-semibold text-textPrimary">{t('home.lowBandwidthLink')}</Text>
       </Pressable>
       {variant === 'passenger' ? (
         <Pressable
@@ -122,9 +125,7 @@ export default function HomeStationsScreen({
           onPress={() => navigation.navigate('SearchDestination')}
           testID={`${testID}-link-search`}
         >
-          <Text className="text-center text-sm font-semibold text-textPrimary">
-            Rechercher une destination
-          </Text>
+          <Text className="text-center text-sm font-semibold text-textPrimary">{t('home.searchDestination')}</Text>
         </Pressable>
       ) : null}
       {showReservationsEntry ? (
@@ -134,18 +135,17 @@ export default function HomeStationsScreen({
           onPress={() => navigation.navigate('MyReservations')}
           testID={`${testID}-link-reservations`}
         >
-          <Text className="text-center text-sm font-semibold text-primary">Mes réservations</Text>
+          <Text className="text-center text-sm font-semibold text-primary">{t('home.myReservations')}</Text>
         </Pressable>
       ) : null}
       {variant === 'driver' ? (
         <Text className="px-md pt-sm text-sm leading-5 text-textSecondary" testID={`${testID}-driver-intro`}>
-          Choisissez une gare pour afficher les véhicules, mettre à jour les statuts (En file → Parti) et
-          consulter les départs si besoin.
+          {t('home.driverIntro')}
         </Text>
       ) : null}
       {(fulfilledTimeStamp ?? 0) > 0 || cacheHint ? (
         <Text className="px-md pt-sm text-xs text-textSecondary" testID={`${testID}-cache-age`}>
-          Données {age}
+          {t('home.dataUpdated')} {age}
           {cacheHint}
         </Text>
       ) : null}
@@ -158,7 +158,7 @@ export default function HomeStationsScreen({
         ListEmptyComponent={
           empty ? (
             <Text className="mt-lg text-center text-textSecondary" testID={`${testID}-empty`}>
-              Aucune gare pour le moment.
+              {t('home.emptyStations')}
             </Text>
           ) : null
         }

@@ -6,6 +6,12 @@ jest.mock('react-native-mmkv', () => ({
   })),
 }));
 
+jest.mock('expo-localization', () => ({
+  getLocales: () => [{ languageCode: 'pt', languageTag: 'pt' }],
+}));
+
+require('./src/shared/i18n');
+
 jest.mock('@react-native-community/netinfo', () => ({
   __esModule: true,
   default: {

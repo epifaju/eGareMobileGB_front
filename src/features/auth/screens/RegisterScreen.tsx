@@ -1,9 +1,11 @@
+import { useTranslation } from 'react-i18next';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 
 import { useRegisterMutation, useRequestOtpMutation } from '@/features/auth/api/authApi';
 import { setAuthenticated } from '@/features/auth/store/authSlice';
 import { tokenStorage } from '@/shared/lib/tokenStorage';
+import LanguageSwitcher from '@/shared/components/LanguageSwitcher';
 import { useAppDispatch } from '@/shared/store/hooks';
 import { parseApiError } from '@/shared/utils/apiError';
 
@@ -12,6 +14,7 @@ export type RegisterScreenProps = {
 };
 
 export default function RegisterScreen({ testID = 'screen-register' }: RegisterScreenProps) {
+  const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const [phone, setPhone] = useState('+245');
   const [password, setPassword] = useState('');
@@ -28,9 +31,9 @@ export default function RegisterScreen({ testID = 'screen-register' }: RegisterS
     try {
       const res = await requestOtp({ phoneNumber: phone.trim() }).unwrap();
       if (res.debugOtp) {
-        setOtpHint(`OTP dev : ${res.debugOtp}`);
+        setOtpHint(t('auth.otpDev', { code: res.debugOtp }));
       } else {
-        setOtpHint('Code envoyé par SMS.');
+        setOtpHint(t('auth.otpSent'));
       }
     } catch (e: unknown) {
       setErrorMsg(parseApiError(e));
@@ -62,10 +65,12 @@ export default function RegisterScreen({ testID = 'screen-register' }: RegisterS
       testID={testID}
     >
       <Text className="mb-lg text-2xl font-bold text-textPrimary" testID={`${testID}-title`}>
-        Inscription
+        {t('auth.registerTitle')}
       </Text>
 
-      <Text className="mb-xs text-sm text-textSecondary">Téléphone (E.164)</Text>
+      <LanguageSwitcher testID={`${testID}-language`} />
+
+      <Text className="mb-xs text-sm text-textSecondary">{t('auth.phoneE164')}</Text>
       <TextInput
         className="mb-md rounded-default border border-border bg-surface px-md py-sm text-textPrimary"
         autoCapitalize="none"
@@ -86,7 +91,7 @@ export default function RegisterScreen({ testID = 'screen-register' }: RegisterS
         {otpLoading ? (
           <ActivityIndicator color="#1E3A8A" />
         ) : (
-          <Text className="font-semibold text-primary">Recevoir le code SMS</Text>
+          <Text className="font-semibold text-primary">{t('auth.requestSmsCode')}</Text>
         )}
       </Pressable>
 
@@ -96,7 +101,7 @@ export default function RegisterScreen({ testID = 'screen-register' }: RegisterS
         </Text>
       ) : null}
 
-      <Text className="mb-xs text-sm text-textSecondary">Code OTP (6 chiffres)</Text>
+      <Text className="mb-xs text-sm text-textSecondary">{t('auth.otpCode')}</Text>
       <TextInput
         className="mb-md rounded-default border border-border bg-surface px-md py-sm text-textPrimary"
         keyboardType="number-pad"
@@ -107,7 +112,7 @@ export default function RegisterScreen({ testID = 'screen-register' }: RegisterS
         value={otp}
       />
 
-      <Text className="mb-xs text-sm text-textSecondary">Mot de passe (min. 8)</Text>
+      <Text className="mb-xs text-sm text-textSecondary">{t('auth.passwordMin8')}</Text>
       <TextInput
         className="mb-md rounded-default border border-border bg-surface px-md py-sm text-textPrimary"
         onChangeText={setPassword}
@@ -118,13 +123,11 @@ export default function RegisterScreen({ testID = 'screen-register' }: RegisterS
 
       <View className="mb-md flex-row items-center justify-between gap-md rounded-default border border-border bg-surface px-md py-sm">
         <View className="flex-1 pr-sm">
-          <Text className="text-sm font-medium text-textPrimary">Compte conducteur</Text>
-          <Text className="mt-xs text-xs text-textSecondary">
-            À activer si le serveur autorise l’auto-inscription conducteur (souvent profil dev).
-          </Text>
+          <Text className="text-sm font-medium text-textPrimary">{t('auth.driverAccount')}</Text>
+          <Text className="mt-xs text-xs text-textSecondary">{t('auth.driverAccountHint')}</Text>
         </View>
         <Switch
-          accessibilityLabel="Inscription conducteur"
+          accessibilityLabel={t('auth.driverAccount')}
           onValueChange={setRegisterAsDriver}
           testID={`${testID}-switch-driver`}
           value={registerAsDriver}
@@ -148,7 +151,7 @@ export default function RegisterScreen({ testID = 'screen-register' }: RegisterS
         {regLoading ? (
           <ActivityIndicator color="#fff" />
         ) : (
-          <Text className="font-semibold text-white">S&apos;inscrire</Text>
+          <Text className="font-semibold text-white">{t('auth.signUp')}</Text>
         )}
       </Pressable>
     </ScrollView>

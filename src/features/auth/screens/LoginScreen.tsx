@@ -1,5 +1,6 @@
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useNavigation } from '@react-navigation/native';
+import { useTranslation } from 'react-i18next';
 import { useState } from 'react';
 import {
   ActivityIndicator,
@@ -11,6 +12,7 @@ import {
 } from 'react-native';
 
 import type { AuthStackParamList } from '@/app/navigation/navigationTypes';
+import LanguageSwitcher from '@/shared/components/LanguageSwitcher';
 import { API_BASE_URL } from '@/shared/constants/env';
 import { useLoginMutation } from '@/features/auth/api/authApi';
 import { setAuthenticated } from '@/features/auth/store/authSlice';
@@ -23,6 +25,7 @@ export type LoginScreenProps = {
 };
 
 export default function LoginScreen({ testID = 'screen-login' }: LoginScreenProps) {
+  const { t } = useTranslation();
   const navigation = useNavigation<NativeStackNavigationProp<AuthStackParamList>>();
   const dispatch = useAppDispatch();
   const [phone, setPhone] = useState('+245');
@@ -51,8 +54,10 @@ export default function LoginScreen({ testID = 'screen-login' }: LoginScreenProp
       testID={testID}
     >
       <Text className="mb-lg text-2xl font-bold text-textPrimary" testID={`${testID}-title`}>
-        Connexion
+        {t('auth.loginTitle')}
       </Text>
+
+      <LanguageSwitcher testID={`${testID}-language`} />
 
       {__DEV__ ? (
         <Text
@@ -60,11 +65,11 @@ export default function LoginScreen({ testID = 'screen-login' }: LoginScreenProp
           selectable
           testID={`${testID}-api-url`}
         >
-          API : {API_BASE_URL}
+          {t('common.apiPrefix')}: {API_BASE_URL}
         </Text>
       ) : null}
 
-      <Text className="mb-xs text-sm text-textSecondary">Téléphone (E.164)</Text>
+      <Text className="mb-xs text-sm text-textSecondary">{t('auth.phoneE164')}</Text>
       <TextInput
         className="mb-md rounded-default border border-border bg-surface px-md py-sm text-textPrimary"
         autoCapitalize="none"
@@ -75,7 +80,7 @@ export default function LoginScreen({ testID = 'screen-login' }: LoginScreenProp
         value={phone}
       />
 
-      <Text className="mb-xs text-sm text-textSecondary">Mot de passe</Text>
+      <Text className="mb-xs text-sm text-textSecondary">{t('auth.password')}</Text>
       <TextInput
         className="mb-md rounded-default border border-border bg-surface px-md py-sm text-textPrimary"
         autoCapitalize="none"
@@ -103,7 +108,7 @@ export default function LoginScreen({ testID = 'screen-login' }: LoginScreenProp
         {isLoading ? (
           <ActivityIndicator color="#fff" testID={`${testID}-loading`} />
         ) : (
-          <Text className="font-semibold text-white">Se connecter</Text>
+          <Text className="font-semibold text-white">{t('auth.signIn')}</Text>
         )}
       </Pressable>
 
@@ -113,7 +118,7 @@ export default function LoginScreen({ testID = 'screen-login' }: LoginScreenProp
         }}
         testID={`${testID}-link-register`}
       >
-        <Text className="text-center text-primary underline">Créer un compte</Text>
+        <Text className="text-center text-primary underline">{t('auth.createAccount')}</Text>
       </Pressable>
     </ScrollView>
   );

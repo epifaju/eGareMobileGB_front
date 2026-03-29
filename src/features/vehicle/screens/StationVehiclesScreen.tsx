@@ -1,5 +1,7 @@
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import * as Location from 'expo-location';
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   Alert,
@@ -18,28 +20,21 @@ import {
   useUpdateVehicleLocationMutation,
   useUpdateVehicleStatusMutation,
 } from '@/features/vehicle/api/vehicleApi';
-import * as Location from 'expo-location';
 import { useStationVehiclesRealtime } from '@/features/vehicle/hooks/useStationVehiclesRealtime';
 import type { Vehicle, VehicleStatus } from '@/features/vehicle/types';
-import { getAppRoleFromToken, isDriverOrAdminRole } from '@/shared/lib/jwtRole';
+import { intlLocaleFromLanguage } from '@/shared/lib/intlLocale';
+import { getAppRoleFromToken, isStationOperationsRole } from '@/shared/lib/jwtRole';
 import { parseApiError } from '@/shared/utils/apiError';
 import { isOfflineQueuedError } from '@/shared/utils/offlineError';
 
-const STATUS_LABEL: Record<VehicleStatus, string> = {
-  EN_FILE: 'En file',
-  REMPLISSAGE: 'Remplissage',
-  COMPLET: 'Complet',
-  PARTI: 'Parti',
-};
-
 const DRIVER_STATUS_OPTIONS: VehicleStatus[] = ['EN_FILE', 'REMPLISSAGE', 'COMPLET', 'PARTI'];
 
-function formatDeparture(iso: string | null): string {
+function formatDeparture(iso: string | null, locale: string): string {
   if (!iso) {
     return '—';
   }
   try {
-    return new Date(iso).toLocaleString('fr-FR', {
+    return new Date(iso).toLocaleString(intlLocaleFromLanguage(locale), {
       hour: '2-digit',
       minute: '2-digit',
       day: '2-digit',
@@ -60,10 +55,11 @@ export default function StationVehiclesScreen({
   navigation,
   testID = 'screen-station-vehicles',
 }: StationVehiclesScreenProps & { testID?: string }) {
+  const { t, i18n } = useTranslation();
   const { stationId, stationName } = route.params;
 
   const appRole = getAppRoleFromToken();
-  const showDriverControls = isDriverOrAdminRole(appRole);
+  const showDriverControls = isStationOperationsRole(appRole);
   const [includeDeparted, setIncludeDeparted] = useState(false);
 
   const activeOnly = !includeDeparted;
@@ -86,13 +82,13 @@ export default function StationVehiclesScreen({
       return '';
     }
     if (cacheMeta.fallback) {
-      return ' · cache SQLite (réseau indisponible)';
+      return t('stationVehicles.sqliteNetwork');
     }
     if (cacheMeta.stale) {
-      return ' · cache SQLite (>24 h)';
+      return t('stationVehicles.sqliteStale');
     }
-    return ' · hors ligne (cache SQLite)';
-  }, [cacheMeta]);
+    return t('stationVehicles.sqliteOffline');
+  }, [cacheMeta, t]);
 
   const [updateVehicleStatus, { isLoading: isUpdatingStatus }] = useUpdateVehicleStatusMutation();
   const [updateVehicleLocation, { isLoading: isUpdatingLocation }] = useUpdateVehicleLocationMutation();
@@ -104,10 +100,10 @@ export default function StationVehiclesScreen({
   const empty = !showInitialLoading && !isError && list.length === 0;
   const emptyMessage =
     showDriverControls && activeOnly
-      ? 'Aucun véhicule actif pour cette gare.'
+      ? t('stationVehicles.emptyActive')
       : showDriverControls && !activeOnly
-        ? 'Aucun véhicule enregistré pour cette gare.'
-        : 'Aucun véhicule actif pour cette gare.';
+        ? t('stationVehicles.emptyAll')
+        : t('stationVehicles.emptyActive');
 
   const cacheAge = useMemo(() => {
     if (!fulfilledTimeStamp) {
@@ -116,19 +112,20 @@ export default function StationVehiclesScreen({
     const ms = Date.now() - fulfilledTimeStamp;
     const minutes = Math.floor(ms / 60000);
     if (minutes < 1) {
-      return 'à l’instant';
+      return t('home.cacheJustNow');
     }
     if (minutes < 60) {
-      return `il y a ${minutes} min`;
+      return t('home.cacheMinutesAgo', { count: minutes });
     }
-    return `il y a ${Math.floor(minutes / 60)} h`;
-  }, [fulfilledTimeStamp]);
+    const hours = Math.floor(minutes / 60);
+    return t('home.cacheHoursAgo', { count: hours });
+  }, [fulfilledTimeStamp, t]);
 
   if (showInitialLoading) {
     return (
       <View className="flex-1 items-center justify-center bg-background" testID={`${testID}-loading`}>
         <ActivityIndicator size="large" />
-        <Text className="mt-md text-textSecondary">Chargement des véhicules…</Text>
+        <Text className="mt-md text-textSecondary">{t('stationVehicles.loadingVehicles')}</Text>
       </View>
     );
   }
@@ -137,12 +134,12 @@ export default function StationVehiclesScreen({
     return (
       <View className="flex-1 items-center justify-center bg-background px-md" testID={`${testID}-error`}>
         <Text className="mb-md text-center text-error">{parseApiError(error)}</Text>
-        <Text className="text-center text-sm text-textSecondary">
-          Vérifiez le réseau, l’API et le WebSocket (même hôte que l’API, chemin /ws-app).
-        </Text>
+        <Text className="text-center text-sm text-textSecondary">{t('stationVehicles.networkHint')}</Text>
       </View>
     );
   }
+
+  const locale = intlLocaleFromLanguage(i18n.language);
 
   return (
     <View className="flex-1 bg-background" testID={testID}>
@@ -150,21 +147,24 @@ export default function StationVehiclesScreen({
         {stationName}
       </Text>
       <Text className="px-md pb-sm text-xs text-textSecondary">
-        Mises à jour temps réel · {cacheAge ? `données ${cacheAge}` : ''}
+        {t('stationVehicles.realtimePrefix')}
+        {cacheAge ? t('stationVehicles.dataAgePrefix', { age: cacheAge }) : ''}
         {sqliteHint}
-        {showDriverControls ? ' · Liste des véhicules' : ''}
+        {showDriverControls ? t('stationVehicles.driverListSuffix') : ''}
       </Text>
 
       {showDriverControls ? (
         <View className="flex-row items-center justify-between border-b border-border px-md py-sm">
           <View className="flex-1 pr-sm">
-            <Text className="text-sm font-medium text-textPrimary">Inclure les départs (Parti)</Text>
+            <Text className="text-sm font-medium text-textPrimary">
+              {t('stationVehicles.includeDepartedTitle')}
+            </Text>
             <Text className="mt-xs text-xs text-textSecondary">
-              Affiche aussi les véhicules marqués comme partis.
+              {t('stationVehicles.includeDepartedSubtitle')}
             </Text>
           </View>
           <Switch
-            accessibilityLabel="Inclure les véhicules partis"
+            accessibilityLabel={t('stationVehicles.includeDepartedA11y')}
             onValueChange={setIncludeDeparted}
             testID={`${testID}-switch-include-departed`}
             value={includeDeparted}
@@ -202,28 +202,41 @@ export default function StationVehiclesScreen({
               <Text className="text-base font-semibold text-textPrimary">{item.registrationCode}</Text>
               <Text className="text-sm text-textSecondary">{item.routeLabel}</Text>
               <Text className="mt-xs text-sm text-textPrimary">
-                Places disponibles : {item.availableSeats} / {item.capacity}
+                {t('stationVehicles.placesAvailable', {
+                  available: item.availableSeats,
+                  capacity: item.capacity,
+                })}
               </Text>
               <Text className="mt-xs text-xs text-textSecondary">
-                Occupés confirmés : {item.occupiedSeats} · Indisponibles : {item.unavailableSeats}
+                {t('stationVehicles.occupiedConfirmed', {
+                  occupied: item.occupiedSeats,
+                  unavailable: item.unavailableSeats,
+                })}
               </Text>
               <Text className="mt-xs text-sm text-textSecondary">
-                Statut : {STATUS_LABEL[item.status]} · Départ : {formatDeparture(item.departureScheduledAt)}
+                {t('stationVehicles.statusLine', {
+                  status: t(`vehicleStatus.${item.status}`),
+                  departure: formatDeparture(item.departureScheduledAt, i18n.language),
+                })}
               </Text>
               {item.estimatedWaitMinutes != null ? (
                 <Text className="mt-xs text-sm text-textPrimary">
-                  Attente estimée : ~{item.estimatedWaitMinutes} min
+                  {t('stationVehicles.waitEstimate', { minutes: item.estimatedWaitMinutes })}
                 </Text>
               ) : null}
               {item.fareAmountXof != null ? (
                 <Text className="mt-xs text-sm text-textPrimary">
-                  Tarif indicatif : {item.fareAmountXof.toLocaleString('fr-FR')} F CFA
+                  {t('stationVehicles.fareIndicative', {
+                    amount: item.fareAmountXof.toLocaleString(locale),
+                  })}
                 </Text>
               ) : null}
 
               {showDriverControls ? (
                 <View className="mt-md">
-                  <Text className="mb-xs text-xs font-medium text-textSecondary">Changer le statut</Text>
+                  <Text className="mb-xs text-xs font-medium text-textSecondary">
+                    {t('stationVehicles.changeStatus')}
+                  </Text>
                   <View className="flex-row flex-wrap gap-xs">
                     {DRIVER_STATUS_OPTIONS.map((st) => {
                       const selected = item.status === st;
@@ -247,7 +260,7 @@ export default function StationVehiclesScreen({
                                 status: st,
                               }).unwrap();
                             } catch (e) {
-                              Alert.alert('Mise à jour impossible', parseApiError(e));
+                              Alert.alert(t('stationVehicles.updateFailedTitle'), parseApiError(e));
                             }
                           }}
                           testID={`${testID}-status-${item.id}-${st}`}
@@ -255,7 +268,7 @@ export default function StationVehiclesScreen({
                           <Text
                             className={`text-xs ${selected ? 'font-semibold text-primary' : 'text-textPrimary'}`}
                           >
-                            {STATUS_LABEL[st]}
+                            {t(`vehicleStatus.${st}`)}
                           </Text>
                         </Pressable>
                       );
@@ -275,7 +288,7 @@ export default function StationVehiclesScreen({
                     }}
                   >
                     <Text className="text-xs font-semibold text-textPrimary">
-                      Scanner QR embarquement
+                      {t('stationVehicles.scanBoardingQr')}
                     </Text>
                   </Pressable>
                   <Pressable
@@ -291,7 +304,9 @@ export default function StationVehiclesScreen({
                       });
                     }}
                   >
-                    <Text className="text-xs font-semibold text-textPrimary">Manifeste passagers</Text>
+                    <Text className="text-xs font-semibold text-textPrimary">
+                      {t('stationVehicles.passengerManifest')}
+                    </Text>
                   </Pressable>
                   <Pressable
                     accessibilityRole="button"
@@ -306,7 +321,9 @@ export default function StationVehiclesScreen({
                       });
                     }}
                   >
-                    <Text className="text-xs font-semibold text-textPrimary">Revenus (30 j.)</Text>
+                    <Text className="text-xs font-semibold text-textPrimary">
+                      {t('stationVehicles.revenue30d')}
+                    </Text>
                   </Pressable>
                   <Pressable
                     accessibilityRole="button"
@@ -316,7 +333,10 @@ export default function StationVehiclesScreen({
                       try {
                         const permission = await Location.requestForegroundPermissionsAsync();
                         if (permission.status !== 'granted') {
-                          Alert.alert('Localisation', 'Autorisez la localisation pour publier la position.');
+                          Alert.alert(
+                            t('stationVehicles.locationPermissionTitle'),
+                            t('stationVehicles.locationPermissionBody'),
+                          );
                           return;
                         }
                         const pos = await Location.getCurrentPositionAsync({
@@ -328,20 +348,22 @@ export default function StationVehiclesScreen({
                           latitude: pos.coords.latitude,
                           longitude: pos.coords.longitude,
                         }).unwrap();
-                        Alert.alert('Position publiée', 'Position véhicule mise à jour.');
+                        Alert.alert(
+                          t('stationVehicles.positionPublishedTitle'),
+                          t('stationVehicles.positionPublishedBody'),
+                        );
                       } catch (e) {
                         if (isOfflineQueuedError(e)) {
-                          Alert.alert(
-                            'Hors ligne',
-                            'La position sera envoyée à la reconnexion (file FIFO).',
-                          );
+                          Alert.alert(t('reservation.offlineTitle'), t('stationVehicles.offlinePositionQueued'));
                           return;
                         }
-                        Alert.alert('Position non publiée', parseApiError(e));
+                        Alert.alert(t('stationVehicles.positionFailedTitle'), parseApiError(e));
                       }
                     }}
                   >
-                    <Text className="text-xs font-semibold text-primary">Publier ma position GPS</Text>
+                    <Text className="text-xs font-semibold text-primary">
+                      {t('stationVehicles.publishGps')}
+                    </Text>
                   </Pressable>
                 </View>
               ) : canReserve ? (
@@ -360,10 +382,12 @@ export default function StationVehiclesScreen({
                   }}
                   testID={`${testID}-reserve-${item.id}`}
                 >
-                  <Text className="text-sm font-semibold text-white">Choisir un siège</Text>
+                  <Text className="text-sm font-semibold text-white">{t('search.chooseSeat')}</Text>
                 </Pressable>
               ) : (
-                <Text className="mt-md text-sm text-textSecondary">Aucune place disponible</Text>
+                <Text className="mt-md text-sm text-textSecondary">
+                  {t('stationVehicles.noSeatsAvailable')}
+                </Text>
               )}
             </View>
           );

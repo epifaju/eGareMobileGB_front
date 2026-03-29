@@ -1,5 +1,6 @@
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, Alert, FlatList, Linking, Pressable, RefreshControl, Text, View } from 'react-native';
 
 import type { MainStackParamList } from '@/app/navigation/navigationTypes';
@@ -16,6 +17,7 @@ export default function SeatMapScreen({
   navigation,
   testID = 'screen-seat-map',
 }: SeatMapScreenProps & { testID?: string }) {
+  const { t } = useTranslation();
   const { vehicleId, stationId, stationName, registrationCode, routeLabel } = route.params;
   const { data, isLoading, isError, error, refetch, isFetching } = useGetVehicleSeatMapQuery(vehicleId, {
     pollingInterval: 3000,
@@ -44,23 +46,23 @@ export default function SeatMapScreen({
   const layoutLabel = useMemo(() => {
     switch (data?.layout) {
       case 'L8':
-        return 'Format 8 places (2+2)';
+        return t('seatMap.layoutL8');
       case 'L15':
-        return 'Format 15 places (2+1)';
+        return t('seatMap.layoutL15');
       case 'L20':
-        return 'Format 20 places (2+2)';
+        return t('seatMap.layoutL20');
       case 'L45':
-        return 'Format 45 places (2+3)';
+        return t('seatMap.layoutL45');
       default:
         return '';
     }
-  }, [data?.layout]);
+  }, [data?.layout, t]);
 
   if (isLoading && !data) {
     return (
       <View className="flex-1 items-center justify-center bg-background" testID={`${testID}-loading`}>
         <ActivityIndicator size="large" />
-        <Text className="mt-md text-textSecondary">Chargement du plan de sièges…</Text>
+        <Text className="mt-md text-textSecondary">{t('seatMap.loadingSeatMap')}</Text>
       </View>
     );
   }
@@ -75,29 +77,34 @@ export default function SeatMapScreen({
             void refetch();
           }}
         >
-          <Text className="text-primary">Réessayer</Text>
+          <Text className="text-primary">{t('common.retry')}</Text>
         </Pressable>
       </View>
     );
   }
+
+  const occupiedLabel = t('seatMap.occupiedShort', {
+    occupied: data.occupiedSeats,
+    capacity: data.capacity,
+  });
 
   return (
     <View className="flex-1 bg-background px-md pt-sm" testID={testID}>
       <Text className="text-base font-semibold text-textPrimary">{registrationCode}</Text>
       <Text className="text-sm text-textSecondary">{routeLabel}</Text>
       <Text className="mt-xs text-xs text-textSecondary">
-        {stationName} · {layoutLabel} · Occupés: {data.occupiedSeats} / {data.capacity}
+        {t('seatMap.metaLine', { stationName, layout: layoutLabel, occupiedLabel })}
       </Text>
       <Text className="mt-xs text-xs text-textSecondary">
-        Indisponibles (inclut attente): {data.unavailableSeats.length}
+        {t('seatMap.unavailableCount', { count: data.unavailableSeats.length })}
       </Text>
       <View className="mt-sm flex-row items-center gap-sm">
         <View className="h-3 w-3 rounded bg-surface border border-border" />
-        <Text className="text-xs text-textSecondary">Disponible</Text>
+        <Text className="text-xs text-textSecondary">{t('seatMap.legendAvailable')}</Text>
         <View className="h-3 w-3 rounded bg-background border border-border opacity-50" />
-        <Text className="text-xs text-textSecondary">Occupé</Text>
+        <Text className="text-xs text-textSecondary">{t('seatMap.legendOccupied')}</Text>
         <View className="h-3 w-3 rounded bg-primary" />
-        <Text className="text-xs text-textSecondary">Sélectionné</Text>
+        <Text className="text-xs text-textSecondary">{t('seatMap.legendSelected')}</Text>
       </View>
 
       <FlatList
@@ -168,12 +175,12 @@ export default function SeatMapScreen({
             const result = await reserveSeat({ vehicleId, stationId, seatNumber: selectedSeat }).unwrap();
             if (result.bookingStatus === 'PENDING_PAYMENT') {
               Alert.alert(
-                'Paiement requis',
-                `Réservation #${result.bookingId} — place bloquée jusqu’au paiement. Ouvrir la page sandbox (Orange Money) ?`,
+                t('seatMap.paymentRequiredTitle'),
+                t('seatMap.paymentRequiredBody', { bookingId: result.bookingId }),
                 [
-                  { text: 'Plus tard', style: 'cancel', onPress: () => navigation.goBack() },
+                  { text: t('seatMap.payLater'), style: 'cancel', onPress: () => navigation.goBack() },
                   {
-                    text: 'Payer',
+                    text: t('seatMap.pay'),
                     onPress: () => {
                       void (async () => {
                         try {
@@ -185,15 +192,15 @@ export default function SeatMapScreen({
                           if (canOpen) {
                             await Linking.openURL(pay.checkoutUrl);
                           } else {
-                            Alert.alert('Ouvrir le lien', pay.checkoutUrl);
+                            Alert.alert(t('seatMap.openLinkTitle'), pay.checkoutUrl);
                           }
                           Alert.alert(
-                            'Paiement',
-                            'Validez sur la page web (webhook sandbox → PAID), puis vérifiez Mes réservations.',
-                            [{ text: 'OK', onPress: () => navigation.goBack() }],
+                            t('seatMap.paymentTitle'),
+                            t('seatMap.paymentSandboxHint'),
+                            [{ text: t('common.ok'), onPress: () => navigation.goBack() }],
                           );
                         } catch (err) {
-                          Alert.alert('Paiement', parseApiError(err));
+                          Alert.alert(t('seatMap.paymentTitle'), parseApiError(err));
                         }
                       })();
                     },
@@ -202,29 +209,29 @@ export default function SeatMapScreen({
               );
               return;
             }
-            Alert.alert('Réservation', `Siège ${selectedSeat} réservé.`, [
+            Alert.alert(t('seatMap.bookingTitle'), t('seatMap.seatReserved', { seat: selectedSeat }), [
               {
-                text: 'OK',
+                text: t('common.ok'),
                 onPress: () => navigation.goBack(),
               },
             ]);
           } catch (e) {
             if (isOfflineQueuedError(e)) {
-              Alert.alert(
-                'Hors ligne',
-                'La réservation sera envoyée à la reconnexion (file FIFO).',
-                [{ text: 'OK', onPress: () => navigation.goBack() }],
-              );
+              Alert.alert(t('seatMap.offlineTitle'), t('seatMap.offlineReserveQueued'), [
+                { text: t('common.ok'), onPress: () => navigation.goBack() },
+              ]);
               return;
             }
-            Alert.alert('Impossible de réserver', parseApiError(e));
+            Alert.alert(t('seatMap.reserveFailedTitle'), parseApiError(e));
             void refetch();
           }
         }}
         testID={`${testID}-confirm`}
       >
         <Text className="text-center text-sm font-semibold text-white">
-          {selectedSeat == null ? 'Choisir un siège' : `Réserver le siège ${selectedSeat}`}
+          {selectedSeat == null
+            ? t('seatMap.chooseSeatCta')
+            : t('seatMap.reserveSeatCta', { seat: selectedSeat })}
         </Text>
       </Pressable>
     </View>

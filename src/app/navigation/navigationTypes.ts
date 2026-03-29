@@ -1,3 +1,5 @@
+import type { AdminStation, AdminVehicle } from '@/features/admin/types';
+
 export type AuthStackParamList = {
   Login: undefined;
   Register: undefined;
@@ -61,8 +63,32 @@ export type DriverStackParamList = {
   VehicleRevenue: VehicleOpsParams;
 };
 
+/** Stack « agent de gare » : mêmes écrans opérationnels que le conducteur, sans onglet voyageur dédié. */
+export type AgentStackParamList = {
+  AgentHome: undefined;
+  LowBandwidthStations: undefined;
+  StationsMap: undefined;
+  StationVehicles: StationVehiclesParams;
+  SeatMap: SeatMapParams;
+  DriverScanBoarding: DriverScanBoardingParams;
+  VehicleManifest: VehicleOpsParams;
+  VehicleRevenue: VehicleOpsParams;
+};
+
 /**
- * Union des routes des deux stacks (typage des écrans partagés).
- * Ne pas utiliser comme un seul stack : deux navigateurs natifs distincts.
+ * Union des routes des stacks (typage des écrans partagés).
+ * Ne pas utiliser comme un seul stack : navigateurs natifs distincts par onglet.
  */
-export type MainStackParamList = PassengerStackParamList & DriverStackParamList;
+export type MainStackParamList = PassengerStackParamList & DriverStackParamList & AgentStackParamList;
+
+/** Stack Administration (JWT ADMIN uniquement). */
+export type AdminStackParamList = {
+  AdminDashboard: undefined;
+  AdminStations: undefined;
+  AdminStationForm: { station?: AdminStation };
+  AdminVehicles: { stationId?: number };
+  AdminVehicleForm: { stationId: number; vehicle?: AdminVehicle };
+  AdminUsers: undefined;
+  AdminUserDetail: { userId: number };
+  AdminAuditLog: undefined;
+};

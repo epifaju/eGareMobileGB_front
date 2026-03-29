@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Pressable, Text } from 'react-native';
 
 import { logout } from '@/features/auth/store/authSlice';
@@ -8,6 +9,7 @@ export type LogoutButtonProps = {
 };
 
 export default function LogoutButton({ testID = 'auth-logout' }: LogoutButtonProps) {
+  const { t } = useTranslation();
   const dispatch = useAppDispatch();
   return (
     <Pressable
@@ -16,7 +18,7 @@ export default function LogoutButton({ testID = 'auth-logout' }: LogoutButtonPro
       }}
       testID={testID}
     >
-      <Text className="text-base font-medium text-white">Déconnexion</Text>
+      <Text className="text-base font-medium text-white">{t('common.logout')}</Text>
     </Pressable>
   );
 }
